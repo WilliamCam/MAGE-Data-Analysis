@@ -3,30 +3,48 @@ from scipy import signal
 from scipy.signal import welch, csd
 import matplotlib
 import matplotlib.pyplot as plt
+import os
 from os import listdir
 import numpy as np
 from scipy import fft
 import lmfit
 matplotlib.use('TkAgg')
+from datetime import datetime
+from datetime import timedelta
 #file by file data analysise
 
 ## Transient filter search for MAGE data stream. First test designed for MAGE0 Data
 
 #load data file
-folder = r"C:\Users\21958742\DarkMatterCentre Dropbox\William Campbell\PhD\High Frequency GW\Data Analysis\MAGE0\MAGE0 v2\run1/"
-Nfiles = len(listdir(folder))
+folder = r"C:\Users\21958742\DarkMatterCentre Dropbox\William Campbell\PhD\High Frequency GW\Data Analysis\MAGE0/"
+exp_name = "MAGE0 v2"
+run_name = "run1"
 
-f = h5py.File(folder + '/' + listdir(folder)[0], 'r')
+SNR_threshold = 40
+
+files = listdir(folder + '/' + exp_name + '/' + run_name)
+Nfiles = len(files)
+
+#meta data from first file
+f = h5py.File(folder + '/' + exp_name + '/' + run_name + '/' + files[0], 'r')
 
 Ninputs = len(f.keys())
 Nchannels = len(f['AI 0'].keys())//2
 Nsample = len(f['AI 0/CH 1-I/Data'][:])
 Fs = f['AI 0'].attrs['Fs']
 data_array = np.zeros((Ninputs, Nchannels, 2, Nsample))
+t_start_string = str(f['AI 0'].attrs['date/time string'])
+t_start = datetime.strptime(t_start_string, "b'UTC %d-%m-%y %H:%M:%S.%f '")
+
+
+#create output folder to store analysis results
+output_path = folder + '/' + exp_name + '/Analysis/' + run_name
+if os.path.exists(output_path) == False:
+    os.makedirs(output_path)
 
 # create numpy array with all data
 for file in range(1, Nfiles): #Current version of MAGE.vi gives false data in first file
-    f = h5py.File(folder + '/' + listdir(folder)[file], 'r')
+    f = h5py.File(folder + '/' + exp_name + '/' + run_name + '/' + files[file], 'r')
     for AI in range(Ninputs):
         for channel in range(Nchannels):
             dataI = f['AI ' + str(AI) + '/CH ' + str(channel+1) + '-I/Data'][:]*9.86e-10
@@ -36,7 +54,7 @@ for file in range(1, Nfiles): #Current version of MAGE.vi gives false data in fi
             data_array[AI, channel, 1, :] = dataQ
 
     #Determine single sided power spectrum for each stream
-    NFFT = 2**12 # for NFFT < Nsample power spectrum will be averaged
+    NFFT = 2**10 # for NFFT < Nsample power spectrum will be averaged
     
     Sx = np.zeros((Ninputs, Nchannels, NFFT))
     Sy = np.zeros((Ninputs, Nchannels, NFFT))
@@ -140,18 +158,24 @@ for file in range(1, Nfiles): #Current version of MAGE.vi gives false data in fi
             plt.draw()
             fig.clf()
             ax = fig.add_subplot(111)
-            ax.plot(fn_trim, Sx_trim, 'o')
             ax.set_title("File " + str(file+1) + " Input AI " + str(AI) + ", Channel " + str(channel))
-            #plt.plot(fn_n, out.init_fit, '--', label='initial fit')
-            ax.plot(tn, np.sqrt(SNRI**2+SNRQ**2))
+            ax.plot(tn, np.sqrt(Idat**2+Qdat**2)/np.std(np.sqrt(Idat**2+Qdat**2)), label = 'raw')
+            #ax.plot(tn, np.sqrt(SNRI**2+SNRQ**2)/np.std(np.sqrt(SNRI**2+SNRQ**2)), label = 'filtered')
+            ax.plot(tn, np.sqrt(SNRI**2+SNRQ**2), label = 'filtered')
             ax.legend()
-            
-            if (Tn for Tn in np.sqrt(SNRI**2+SNRQ**2) > 30):
+            R = np.sqrt(SNRI**2+SNRQ**2)
+            if any([Tn for Tn in R > SNR_threshold]):
                 print("Large event detected" + '\n')
                 print("File " + str(file+1) + " Input AI " + str(AI) + ", Channel " + str(channel))
                 
+                file_start_date = t_start + timedelta(seconds = file*Nsample*dt)
+                event_day_string = datetime.strftime(file_start_date, "%d-%m-%y")
+                event_time_string = datetime.strftime(file_start_date, "%Hp%Mp%S")
+                if os.path.exists(output_path + '/' + event_day_string) == False:
+                    os.makedirs(output_path+ '/' + event_day_string)
+                pp = output_path + '/' + event_day_string  +'/filteredSignal-%1.2f-AI ' % (np.max(R)) + str(AI) + '-channel ' + str(channel) +'-' + event_time_string + ".pdf"
+                plt.savefig(pp, format='pdf', dpi=600)
                 
-          
     
     ## Plot filtered results / mode temperatures --> wont be accurate for MAGE0 Data
     
