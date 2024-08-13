@@ -46,8 +46,9 @@ t_start = datetime.strptime(t_start_string, 'UTC %d-%m-%y %H:%M:%S.%f ')
 
 kb = 1.380649e-23
 event_catalogue={}
+candidate_events = []
 #create output folder to store analysis results
-output_path = folder + '/' + exp_name + '/Analysis/' + run_name + '-1 sigma'
+output_path = folder + '/' + exp_name + '/Analysis/' + run_name + '-Teff'
 if os.path.exists(output_path) == False:
     os.makedirs(output_path)
 
@@ -71,7 +72,7 @@ def optimal_filter(data, template, Fs, NFFT):
     return SNR
 
 # create numpy array with all data
-for file in range(1, Nfiles): #Current version of MAGE.vi gives false data in first file
+for file in range(15, Nfiles-1): #Current version of MAGE.vi gives false data in first file
     f = h5py.File(folder + '/' + exp_name + '/' + run_name + '/' + identifier + str(file) + '.hdf5', 'r')
     file_start = t_start + timedelta(seconds = file*Nsample*dt)
     for AI in range(Ninputs):
@@ -165,7 +166,7 @@ for file in range(1, Nfiles): #Current version of MAGE.vi gives false data in fi
     t_sig = dt*np.linspace(0, Nfilter, Nfilter)
     Φ = 3*np.pi/4
 
-
+    event_catalogue_perfile = {}
     for AI in range(Ninputs):
         for channel in range(Nchannels):
 
@@ -182,11 +183,22 @@ for file in range(1, Nfiles): #Current version of MAGE.vi gives false data in fi
             
             Rdat = (Idat**2+Qdat**2)*VtoT
             Tn=Rdat
-            template = np.exp(-t_sig/(2*tau1)) # template construction
-            data = Rdat
+            template = np.exp(-2*t_sig/(tau1)) # template construction
+            data = np.sqrt(Rdat)
 
             SNR = optimal_filter(data, template, Fs, NFFT)
-            threshold = 0.25
+            
+            Nbins = 250
+            ii=50
+            jj=150
+            Tn_height, Tn_edge = np.histogram(SNR**2, bins = Nbins)
+            Tn_wk_height, Tn_wk_edge = np.histogram(SNR**2, bins = Nbins)
+            Tfit_m, Tfit_b = np.polyfit(Tn_edge[ii:jj],np.log(Tn_height[ii:jj]+1),1)
+            Tfit_wk_m, Tfit_wk_b = np.polyfit(Tn_wk_edge[ii:jj],np.log(Tn_wk_height[ii:jj]+1),1)
+            tn_T = np.linspace(0.0,max(Tn_edge)*0.99,Nbins)
+            
+            threshold = -1/Tfit_wk_m ## effective noise temperature
+            print(str(threshold))
             peaks = find_peaks(SNR, height = threshold, distance = int(tau1*Fs), width = [100, 5e6], rel_height=1.0)
             
             # file_start_date = t_start + timedelta(seconds = file*Nsample*dt)
@@ -195,7 +207,7 @@ for file in range(1, Nfiles): #Current version of MAGE.vi gives false data in fi
             ## data quality cuts
             if len(peaks[0])>0:
                 diverge_template1 = np.exp(-t_sig/(tau1/10.0))
-                diverge_template2 = np.exp(-t_sig/(tau1/100.0))
+                diverge_template2 = np.exp(-t_sig/(tau1*10.0))
                 transient_SNR1 = optimal_filter(data, diverge_template1, Fs, NFFT)           
                 transient_SNR2 = optimal_filter(data, diverge_template2, Fs, NFFT)
                 plt.ion()
@@ -226,10 +238,35 @@ for file in range(1, Nfiles): #Current version of MAGE.vi gives false data in fi
                 # pp = output_path + '/' + event_day_string  +'/filteredSignal-%1.2f-AI ' % (SNR[event_i]) + str(AI) + '-channel ' + str(channel+1) +'-' + datetime.strftime(event_time, "%Hp%Mp%S") + ".pdf"
                 # plt.savefig(pp, format='pdf', dpi=300)
                 print('Event ' + event_name + ' Saved')
-               
+                event_catalogue_perfile[event_name] = {'time' : event_time, 'SNR' : SNR[event_i], 'input AI' : AI, 'channel' : channel+1, 'frequency' : f_demod, 'noise' : np.mean(Tn), 'file N' : file, 'index' : event_i}
+    # Coincident modes on one file
+    print("Looking for Coincident events...")
+    times1 =  [event_catalogue_perfile[event]['time'].timestamp() for event in event_catalogue_perfile if (event_catalogue_perfile[event]['input AI'] == 1)]
+    times0 =  [event_catalogue_perfile[event]['time'].timestamp() for event in event_catalogue_perfile if (event_catalogue_perfile[event]['input AI'] == 0)]
+    
+    coincident_t = []
+    for time0 in times0:
+        for time1 in times1:
+            if np.abs(time0-time1) < 0.05:
+                #print("Coincident Event at " + str(time0))
+                coincident_t.append(time0)
+                
+    for ii in range(len(coincident_t)):
+        co_event_nn = ii
+        co_event = [(event, event_catalogue_perfile[event]) for event in event_catalogue_perfile if event_catalogue_perfile[event]['time'] == datetime.fromtimestamp(coincident_t[co_event_nn])]
+        co_event0 = [event for event in co_event if event[1]['input AI']==0]
+        co_event1 = [event for event in co_event if event[1]['input AI']==1]
+        
+        for event0 in co_event0:
+            for event1 in co_event1:
+                if event0[1]['channel'] == event1[1]['channel']:
+                    candidate_events.append([event0,event1])                    
+    print("Candidate events :" + str(len(candidate_events)))
 import pickle
-with open(output_path + '/event_catalogue.pkl', 'wb') as f:
-    pickle.dump(event_catalogue, f)              
+with open(output_path + '/event_catalogue-2.pkl', 'wb') as f:
+    pickle.dump(event_catalogue, f)      
+with open(output_path + '/co_event_catalogue-2.pkl', 'wb') as f:
+    pickle.dump(candidate_events, f)         
     ## Plot filtered results / mode temperatures --> wont be accurate for MAGE0 Data
     
     ## Transient search for Impulse events some decay shape (N consecutive samples with T>?)
