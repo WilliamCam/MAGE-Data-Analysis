@@ -32,8 +32,12 @@ f1 = h5py.File(folder + '/' + exp_name + '/' + run_name + '/' + files[1], 'r')
 #load calibration data
 fsquid = open(folder + '/' + exp_name + '/calibration/SQUID gain models.txt')
 fresistance = open(folder + '/' + exp_name + '/calibration/Rs.txt')
+feffective_mass = open(folder + '/' + exp_name + '/calibration/Meff.txt')
+mode_distributions = np.genfromtxt(feffective_mass, delimiter=',', skip_header=1)
 squid_model = np.genfromtxt(fsquid, skip_header=1, delimiter=',')
 resistances = np.genfromtxt(fresistance, delimiter=',')
+meff = mode_distributions[:,1]
+xi = mode_distributions[:,2]
 
 Ninputs = len(f.keys())
 Nchannels = len(f['AI 0'].keys())//2
@@ -52,24 +56,31 @@ output_path = folder + '/' + exp_name + '/Analysis/' + run_name + '-Teff'
 if os.path.exists(output_path) == False:
     os.makedirs(output_path)
 
+noise_input = False # replaces data with random noise
+
 #filter function
 def optimal_filter(data, template, Fs, NFFT):
     fft = np.fft.fft(data) # fourier transformed data
     zero_pad = np.zeros(data.size - template.size) # zero pad template to match data size
     template_pad = np.append(template, zero_pad)
     fft_template = np.fft.fft(template_pad) # fourier transformed padded template
-    power_dat, freq_PSD = plt.psd(data, Fs=Fs, NFFT = NFFT, visible = False)
+    power_dat, freq_PSD = plt.psd(data, Fs=Fs, NFFT = NFFT, visible = True)
     freq_dat = np.fft.fftfreq(data.size)*Fs #fourier frequencies corresponding to data partition
     power_spec = np.interp(freq_dat, freq_PSD, power_dat)
     
-    df = np.abs(freq_dat[1] - freq_dat[2])
-    opt_filter = fft * fft_template.conjugate() / power_spec #optimal filter
-    dat_filt = 2*np.fft.ifft(opt_filter) #revert to time domain for filter output
+    val_cal = np.max(template)
+    OF = np.fft.ifft(fft_template*fft_template.conjugate()/power_spec).real
+    K = val_cal/np.amax(OF)
     
-    sigmasq = 4*(fft_template * fft_template.conjugate() / power_spec).sum() * df 
+    
+    df = np.abs(freq_dat[1] - freq_dat[2])
+    opt_filter = K * fft * fft_template.conjugate() / power_spec #optimal filter
+    dat_filt = np.fft.ifft(opt_filter) #revert to time domain for filter output
+    
+    sigmasq = 2*(K**2 * fft_template * fft_template.conjugate() / power_spec).sum() * df 
     sigma = np.sqrt(np.abs(sigmasq))
-    SNR = abs(dat_filt) / (sigma)
-    return SNR
+    SNR = np.abs(2*dat_filt) / (sigma)
+    return SNR, dat_filt
 
 # create numpy array with all data
 for file in range(15, Nfiles-1): #Current version of MAGE.vi gives false data in first file
@@ -96,24 +107,36 @@ for file in range(15, Nfiles-1): #Current version of MAGE.vi gives false data in
             
             Sx[AI, channel, :] = SdataI
             Sy[AI, channel, :] = SdataQ
+            
     
     #Fit lorentzian to each stream to determine Q and fpeak
-    from lmfit.models import LorentzianModel, LinearModel
+    from lmfit.models import LorentzianModel, ConstantModel
     
     Q_array = np.zeros((Ninputs, Nchannels, 2))
     Gamma_array = np.zeros(Q_array.shape)
+    height_array = np.zeros(Q_array.shape)
     fcenter_array = np.zeros(Q_array.shape)
     error_array = np.zeros(Q_array.shape)
     Gamma_max = 20.0 #Maximum accepted linewidth in Hz
-    error_max = 0.2 #Maximum accepted standard fit error in Hz
+    error_max = 0.5 #Maximum accepted standard fit error in Hz
     for AI in range(Ninputs):
         for channel in range(Nchannels):
-            Sx_trim = Sx[AI, channel, :]
-            Sy_trim = Sy[AI, channel, :]
-            fn_trim = fn    
+            Sxdat = Sx[AI,channel,:]
+            peak_ii = np.where(Sxdat==np.max(Sxdat))[0][0]
+            ii_span = 2**10
+            
+            ss = peak_ii-ii_span//2
+            tt = peak_ii+ii_span//2
+            if ss < 1:
+                ss = 0
+                        
+            Sx_trim = Sx[AI, channel, ss:tt]
+            Sy_trim = Sy[AI, channel, ss:tt]
+            fn_trim = fn[ss:tt]
+            
     
             peak_model = LorentzianModel()
-            noise_model = LinearModel()
+            noise_model = ConstantModel()
     
             pars = peak_model.guess(Sx_trim, x=fn_trim)
             pars += noise_model.guess(Sx_trim, x=fn_trim)
@@ -125,6 +148,7 @@ for file in range(15, Nfiles-1): #Current version of MAGE.vi gives false data in
             out2 = model.fit(Sy_trim, pars2, x=fn_trim)
             Gamma1, Gamma2 = out.params["sigma"].value, out2.params["sigma"].value
             fcenter1, fcenter2 = out.params["center"].value, out2.params["center"].value
+            h1, h2 = out.params["height"].value + out.params["c"].value, out2.params["height"].value + out2.params["c"].value
             f_demod = f['AI ' + str(AI)].attrs['Demod freqs AI ' + str(AI)][channel] # demodulation frequency
     
             Q1, Q2 = (fcenter1+f_demod)/(2*Gamma1), (fcenter2+f_demod)/(2*Gamma2)
@@ -138,6 +162,7 @@ for file in range(15, Nfiles-1): #Current version of MAGE.vi gives false data in
                 error2 =  out2.params["sigma"].stderr/out2.params["sigma"].value
             Q_array[AI, channel, :] = [Q1,Q2]
             Gamma_array[AI, channel, :] = [Gamma1,Gamma2]
+            height_array[AI, channel, :] = [h1*(1+(fcenter1/151.8)),h2*(1+(fcenter2/151.8))]
             fcenter_array[AI, channel, :] = [fcenter1, fcenter2]
             error_array[AI, channel, :] = [error1, error2]
             if Gamma1 > Gamma_max or Gamma2 > Gamma_max or error1 > error_max or error2 > error_max: #Ignore bad fits
@@ -164,7 +189,6 @@ for file in range(15, Nfiles-1): #Current version of MAGE.vi gives false data in
     Nfilter=NFFT
     tn = np.linspace(0,Nsample*dt,Nsample)
     t_sig = dt*np.linspace(0, Nfilter, Nfilter)
-    Φ = 3*np.pi/4
 
     event_catalogue_perfile = {}
     for AI in range(Ninputs):
@@ -176,29 +200,41 @@ for file in range(15, Nfiles-1): #Current version of MAGE.vi gives false data in
             
             if any(Gamma_array[AI, channel, :] > Gamma_max) or any(error_array[AI, channel, :] > error_max): # Skip channels for which a mode within parameters could not be found
               continue
-            G = squid_model[AI][0]/np.sqrt(1+(f_demod/squid_model[AI][1])**2) #squid gain
-            VtoT = (1/G)**2*resistances[channel][AI]*tau1/kb/4
+          
+            dataI = f['AI ' + str(AI) + '/CH ' + str(channel+1) + '-I/Data'][:]*9.86e-10
+            dataQ = f['AI ' + str(AI) + '/CH ' + str(channel+1) + '-Q/Data'][:]*9.86e-10
             
-            Idat, Qdat = data_array[AI, channel, 0], data_array[AI, channel, 1] # Phase and quadrature data to be filtered
+            if noise_input:
+                dataI_noise = np.random.normal(np.mean(dataI), np.std(dataI), size = len(dataI))
+                dataQ_noise = np.random.normal(np.mean(dataQ), np.std(dataQ), size = len(dataQ))
+                Rdat = np.sqrt(dataI_noise**2+dataQ_noise**2)
+            else:    
+                Rdat = np.sqrt(dataI**2+dataQ**2)
+            f_demod = f['AI ' + str(AI)].attrs['Demod freqs AI ' + str(AI)][channel] # demodulation frequency
             
-            Rdat = (Idat**2+Qdat**2)*VtoT
-            Tn=Rdat
-            template = np.exp(-2*t_sig/(tau1)) # template construction
-            data = np.sqrt(Rdat)
+            Nfilter=int(Fs*5*tau1)
+            tn = np.linspace(0,Nsample*dt,Nsample)
+            t_sig = dt*np.linspace(0, Nfilter, Nfilter)
 
-            SNR = optimal_filter(data, template, Fs, NFFT)
+            G = squid_model[AI][0]/np.sqrt(1+(f_demod/squid_model[AI][1])**2) #squid gain
+
             
-            Nbins = 250
-            ii=50
-            jj=150
-            Tn_height, Tn_edge = np.histogram(SNR**2, bins = Nbins)
-            Tn_wk_height, Tn_wk_edge = np.histogram(SNR**2, bins = Nbins)
-            Tfit_m, Tfit_b = np.polyfit(Tn_edge[ii:jj],np.log(Tn_height[ii:jj]+1),1)
-            Tfit_wk_m, Tfit_wk_b = np.polyfit(Tn_wk_edge[ii:jj],np.log(Tn_wk_height[ii:jj]+1),1)
-            tn_T = np.linspace(0.0,max(Tn_edge)*0.99,Nbins)
+            kappa = np.sqrt(f_demod*2*np.pi*meff[channel]/(np.mean(Q_array[AI, channel])*resistances[channel][AI]))
             
-            threshold = -1/Tfit_wk_m ## effective noise temperature
-            print(str(threshold))
+            template = np.exp(-t_sig/(tau1)) # template construction
+            
+            h = np.fft.ifft(np.fft.fft(Rdat[1:]/G)/(kappa*f_demod*2*np.pi)).real
+            
+            Zl = 1j*2*np.pi*f_demod*400e-9 #circuit input impedance
+            Zc = np.abs(1/(1j*2*np.pi*f_demod*4e-12))
+            ZlZc = (Zl+Zc)/(Zl*Zc)
+            R = resistances[channel][AI]
+            Zi = ZlZc + R
+            VtoT = 1/G*np.abs(Zi)/np.sqrt(4*kb*R)
+            T = np.mean(height_array[AI, channel, :])*VtoT**2
+            SNR, dat_filt = optimal_filter(h, template, Fs, NFFT)
+            
+            threshold = 0.5 ## effective noise temperature
             peaks = find_peaks(SNR, height = threshold, distance = int(tau1*Fs), width = [100, 5e6], rel_height=1.0)
             
             # file_start_date = t_start + timedelta(seconds = file*Nsample*dt)
@@ -208,8 +244,8 @@ for file in range(15, Nfiles-1): #Current version of MAGE.vi gives false data in
             if len(peaks[0])>0:
                 diverge_template1 = np.exp(-t_sig/(tau1/10.0))
                 diverge_template2 = np.exp(-t_sig/(tau1*10.0))
-                transient_SNR1 = optimal_filter(data, diverge_template1, Fs, NFFT)           
-                transient_SNR2 = optimal_filter(data, diverge_template2, Fs, NFFT)
+                transient_SNR1, junk = optimal_filter(h, diverge_template1, Fs, NFFT)           
+                transient_SNR2, junk = optimal_filter(h, diverge_template2, Fs, NFFT)
                 plt.ion()
             # fig = plt.figure("Filtered Output")
             # plt.pause(0.05)
@@ -221,24 +257,21 @@ for file in range(15, Nfiles-1): #Current version of MAGE.vi gives false data in
             # ax.plot(tn, SNR, label = 'SNR')
             # ax.legend()
             #ax.plot(peaks[0]*dt,peaks[1]['peak_heights'], linestyle = ' ', marker = 'x', color = 'black')
-    
+            print("Effective mode Temperature was %1.2f K" % T)
             for event_i in peaks[0]:
                 #print('%1.2f'%(SNR[event_i]) + ', %1.2f' % (transient_SNR1[event_i]) + ', %1.2f' % (transient_SNR2[event_i]))
-                if (SNR[event_i] < transient_SNR1[event_i] or SNR[event_i] < transient_SNR2[event_i]):
+                if ((SNR**2)[event_i] < (transient_SNR1**2)[event_i] or (SNR**2)[event_i] < (transient_SNR2**2)[event_i]):
                     print("Transiently divergent feature detected of SNR %1.2f" % (SNR[event_i]) + ", performing quality cut")
                     continue
                 print("Large event detected" + '\n')
                 print("File " + str(file) + " Input AI " + str(AI) + ", Channel " + str(channel+1))
                 event_time = file_start + timedelta(seconds = event_i*dt)
                 event_name = datetime.strftime(event_time, "%d%m%y-%H:%M:%S") + "-AI" + str(AI) + "-ch" + str(channel+1) + "-SNR %1.2f" % (SNR[event_i])
-                event_catalogue[event_name] = {'time' : event_time, 'SNR' : SNR[event_i], 'input AI' : AI, 'channel' : channel+1, 'frequency' : f_demod, 'noise' : np.mean(Tn), 'file N' : file, 'index' : event_i}
-                # ax.plot(event_i*dt,SNR[event_i], linestyle = ' ', marker = 'x', color = 'black')
-                # if os.path.exists(output_path + '/' + event_day_string) == False:
-                #     os.makedirs(output_path+ '/' + event_day_string)
-                # pp = output_path + '/' + event_day_string  +'/filteredSignal-%1.2f-AI ' % (SNR[event_i]) + str(AI) + '-channel ' + str(channel+1) +'-' + datetime.strftime(event_time, "%Hp%Mp%S") + ".pdf"
-                # plt.savefig(pp, format='pdf', dpi=300)
-                print('Event ' + event_name + ' Saved')
-                event_catalogue_perfile[event_name] = {'time' : event_time, 'SNR' : SNR[event_i], 'input AI' : AI, 'channel' : channel+1, 'frequency' : f_demod, 'noise' : np.mean(Tn), 'file N' : file, 'index' : event_i}
+                if event_name not in event_catalogue: 
+                    event_catalogue[event_name] = {'time' : event_time, 'SNR' : SNR[event_i],'Teff' : T, 'input AI' : AI, 'channel' : channel+1, 'frequency' : f_demod, 'amplitude' : dat_filt[event_i], 'file N' : file, 'index' : event_i}
+                    print('Event ' + event_name + ' Saved')
+                if event_name not in event_catalogue_perfile:
+                    event_catalogue_perfile[event_name] = {'time' : event_time, 'SNR' : SNR[event_i],'Teff' : T, 'input AI' : AI, 'channel' : channel+1, 'frequency' : f_demod, 'amplitude' : dat_filt[event_i], 'file N' : file, 'index' : event_i}
     # Coincident modes on one file
     print("Looking for Coincident events...")
     times1 =  [event_catalogue_perfile[event]['time'].timestamp() for event in event_catalogue_perfile if (event_catalogue_perfile[event]['input AI'] == 1)]
@@ -250,7 +283,7 @@ for file in range(15, Nfiles-1): #Current version of MAGE.vi gives false data in
             if np.abs(time0-time1) < 0.05:
                 #print("Coincident Event at " + str(time0))
                 coincident_t.append(time0)
-                
+                break
     for ii in range(len(coincident_t)):
         co_event_nn = ii
         co_event = [(event, event_catalogue_perfile[event]) for event in event_catalogue_perfile if event_catalogue_perfile[event]['time'] == datetime.fromtimestamp(coincident_t[co_event_nn])]
@@ -263,9 +296,9 @@ for file in range(15, Nfiles-1): #Current version of MAGE.vi gives false data in
                     candidate_events.append([event0,event1])                    
     print("Candidate events :" + str(len(candidate_events)))
 import pickle
-with open(output_path + '/event_catalogue-2.pkl', 'wb') as f:
+with open(output_path + '/event_catalogue-strain-Teff.pkl', 'wb') as f:
     pickle.dump(event_catalogue, f)      
-with open(output_path + '/co_event_catalogue-2.pkl', 'wb') as f:
+with open(output_path + '/co_event_strain-Teff.pkl', 'wb') as f:
     pickle.dump(candidate_events, f)         
     ## Plot filtered results / mode temperatures --> wont be accurate for MAGE0 Data
     
