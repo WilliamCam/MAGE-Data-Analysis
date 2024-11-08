@@ -17,16 +17,22 @@ import pickle
 from datetime import datetime
 
 from lmfit.models import LorentzianModel
-from lmfti.models import ConstantModel
+from lmfit.models import ConstantModel
 
+#Class to store meta data to access a single data channel
+class data_channel:
+    def __init__(self, File, AI, channel):
+        File = self.File
+        AI = self.AI
+        channel = self.channel
 
-def optimal_filter(data, template, Fs, NFFT):
-    fft = np.fft.fft(data) # fourier transformed data
+#Performs optimal filter on a segemnt of data given a template of the same size
+def optimal_filter(data, template, Fs, *args, **kwargs):
     zero_pad = np.zeros(data.size - template.size) # zero pad template to match data size
     template_pad = np.append(template, zero_pad)
     fft_template = np.fft.fft(template_pad) # fourier transformed padded template
-    plt.plot()
-    power_dat, freq_PSD = plt.psd(data, Fs=Fs, NFFT = NFFT, visible = True)
+
+    power_dat, freq_PSD = plt.psd(data, Fs=Fs, **kwargs)
     freq_dat = np.fft.fftfreq(data.size)*Fs #fourier frequencies corresponding to data partition
     power_spec = np.interp(freq_dat, freq_PSD, power_dat)
     
@@ -43,7 +49,19 @@ def optimal_filter(data, template, Fs, NFFT):
     sigma = np.sqrt(np.abs(sigmasq))
     SNR = np.abs(2*dat_filt) / (sigma)
     return SNR, dat_filt
-def fit_spectrum(Sx_trim,Sy_trim,fn_trim, plotting=True, return_peak = False):
+
+def fit_spectrum(data_channel, *args, plotting=True, return_peak = False, trim=(0,-1), **kwargs):
+    
+    f = data_channel.File
+    Fs = f['AI ' + str(data_channel.AI)].attrs['Fs']
+    dataI = f['AI ' + str(data_channel.AI) + '/CH ' + str(data_channel.channel+1) + '-I/Data'][:]*9.86e-10
+    dataQ = f['AI ' + str(data_channel.AI) + '/CH ' + str(data_channel.channel+1) + '-Q/Data'][:]*9.86e-10
+    
+    fn, SdataI = welch(dataI, fs=Fs, **kwargs)
+    fn, SdataQ = welch(dataQ, fs=Fs, **kwargs)
+    Sx_trim = SdataI[trim[0]:trim[1]]
+    Sy_trim = SdataQ[trim[0]:trim[1]]
+    fn_trim = fn[trim[0]:trim[1]]
     
     peak_model = LorentzianModel()
     noise_model= ConstantModel()
@@ -59,7 +77,7 @@ def fit_spectrum(Sx_trim,Sy_trim,fn_trim, plotting=True, return_peak = False):
     Gamma1, Gamma2 = out.params["sigma"].value, out2.params["sigma"].value
     fcenter1, fcenter2 = out.params["center"].value, out2.params["center"].value
     h1, h2 = out.params["height"].value + out.params["c"].value, out2.params["height"].value + out2.params["c"].value
-    f_demod = f['AI ' + str(AI)].attrs['Demod freqs AI ' + str(AI)][channel] # demodulation frequency
+    f_demod = f['AI ' + str(data_channel.AI)].attrs['Demod freqs AI ' + str(data_channel.AI)][data_channel.channel] # demodulation frequency
 
     Q1, Q2 = (fcenter1+f_demod)/(2*Gamma1), (fcenter2+f_demod)/(2*Gamma2)
     if out.params["sigma"].stderr == None:
@@ -77,7 +95,7 @@ def fit_spectrum(Sx_trim,Sy_trim,fn_trim, plotting=True, return_peak = False):
         plt.axis('tight')
         ax = fig.add_subplot(111)
         ax.plot(fn_trim, Sx_trim, 'o', markersize=0.2)
-        ax.set_title("Input AI " + str(AI) + ", Channel " + str(channel+1))
+        ax.set_title("Input AI " + str(data_channel.AI) + ", Channel " + str(data_channel.channel+1))
         #plt.plot(fn_n, out.init_fit, '--', label='initial fit')
         ax.plot(fn_trim, out.best_fit, '-', label='best fit I')
         ax.plot(fn_trim, out2.best_fit, '-', label='best fit Q')
