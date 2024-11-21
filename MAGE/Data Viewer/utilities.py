@@ -5,7 +5,7 @@ Created on Tue Oct 15 20:26:11 2024
 @author: 21958742
 """
 
-import h5py
+
 from scipy import signal
 from scipy.signal import welch, csd
 import matplotlib.pyplot as plt
