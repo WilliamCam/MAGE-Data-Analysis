@@ -173,8 +173,8 @@ class FileViewer(tk.Frame):
             print(full_path)
             dirs = os.listdir(full_path)
             # Show the new frame with the directory contents
-            self.controller.frames[DataPlotter].update_contents(dirs)
-            if self.controller.frames[DataPlotter].meta_data_found(dirs)==False:
+            self.controller.frames[DataPlotter].update_contents(dirs) # plot selected data
+            if self.controller.frames[DataPlotter].meta_data_found(dirs)==False: # to be added later
                 print(full_path + " is yet to be analysed.")
             #self.controller.show_frame(DataPlotter)
         except Exception as e:
