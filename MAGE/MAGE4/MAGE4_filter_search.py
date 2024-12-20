@@ -16,22 +16,22 @@ import os
 import numpy as np
 import re
 import h5py
-library_path = 'C:\Users\21958742\MAGE/'  # Adjust this to the actual absolute path
+library_path = r'C:\Users\21958742\GitHub\MAGE-Data-Analysis\MAGE\MAGE4/'  # Adjust this to the actual absolute path
 #library_path = '/home/leo_maria/Desktop/UWA/MAGE/libraries/'
 
 sys.path.append(library_path)
 import Analysis_functions
 
 #file by file data analysis
-harddisk_fold = r"D:/MAGE4"
+harddisk_fold = r"C:\Users\21958742\MAGE"
 ## Transient filter search for MAGE data stream. First test designed for MAGE0 Data
 
 #load data file
-folder = r"C:/Users/MAGE/Documents/MAGE/Data"
+folder = r"C:\Users\21958742\MAGE"
 #folder='/home/leo_maria/Desktop/UWA/MAGE'
 exp_name = "MAGE4"
-run_name = "run1"
-identifier = 'run1-'
+run_name = "run3"
+identifier = 'run3-'
 
 files = listdir(harddisk_fold + '/' + exp_name + '/' + run_name)
 numfile = np.zeros(len(files))
@@ -112,9 +112,9 @@ def optimal_filter(data, template, Fs, NFFT):
     return SNR, dat_filt
 
 # create numpy array with all data
-start_file=0
-for file in numfile: #Current version of MAGE.vi gives false data in first file
-    f = h5py.File(harddisk_fold + '/' + exp_name + '/' + run_name + '/' + run_name + '-' + str(int(file)) + '.hdf5', 'r')
+start_file=1
+for file in range(300, Nfiles-1): #Current version of MAGE.vi gives false data in first file
+    f = h5py.File(harddisk_fold + '/' + exp_name + '/' + run_name + '/' + identifier + str(int(file)) + '.hdf5', 'r')
     file_start = t_start + timedelta(seconds = file*Nsample*dt)
     for AI in range(Ninputs):
         for channel in range(Nchannels):
@@ -125,7 +125,7 @@ for file in numfile: #Current version of MAGE.vi gives false data in first file
             data_array[AI, channel, 1, :] = dataQ
 
     #Determine single sided power spectrum for each stream
-    NFFT = 2**13 # for NFFT < Nsample power spectrum will be averaged
+    NFFT = 2**12 # for NFFT < Nsample power spectrum will be averaged
     
     Sx = np.zeros((Ninputs, Nchannels, NFFT))
     Sy = np.zeros((Ninputs, Nchannels, NFFT))
@@ -198,21 +198,21 @@ for file in numfile: #Current version of MAGE.vi gives false data in first file
             if Gamma1 > Gamma_max or Gamma2 > Gamma_max or error1 > error_max or error2 > error_max: #Ignore bad fits
                 print("Input AI " + str(AI) + ", Channel " + str(channel+1) + ":WARNING: Bad mode detected, channel will be ignored")
 
-            # plt.ion()
-            # fig = plt.figure("IMPA DOWNLOAD")
-            # plt.axis('tight')
-            # plt.pause(0.05)
-            # plt.draw()
-            # fig.clf()
-            # ax = fig.add_subplot(111)
-            # ax.plot(fn_trim, Sx_trim, 'o', markersize=0.2)
-            # ax.set_title("Input AI " + str(AI) + ", Channel " + str(channel+1))
-            # #plt.plot(fn_n, out.init_fit, '--', label='initial fit')
-            # ax.plot(fn_trim, out.best_fit, '-', label='best fit I')
-            # ax.plot(fn_trim, out2.best_fit, '-', label='best fit Q')
-            # ax.set_yscale('log')
-            # #ax.set_xscale('log')
-            # ax.legend()
+            plt.ion()
+            fig = plt.figure("IMPA DOWNLOAD")
+            plt.axis('tight')
+            plt.pause(0.05)
+            plt.draw()
+            fig.clf()
+            ax = fig.add_subplot(111)
+            ax.plot(fn_trim, Sx_trim, 'o', markersize=0.2)
+            ax.set_title("Input AI " + str(AI) + ", Channel " + str(channel+1))
+            #plt.plot(fn_n, out.init_fit, '--', label='initial fit')
+            ax.plot(fn_trim, out.best_fit, '-', label='best fit I')
+            ax.plot(fn_trim, out2.best_fit, '-', label='best fit Q')
+            ax.set_yscale('log')
+            #ax.set_xscale('log')
+            ax.legend()
     
     
     #Filtering data
@@ -330,9 +330,9 @@ for file in numfile: #Current version of MAGE.vi gives false data in first file
                     candidate_events.append([event0,event1])                    
     print("Candidate events :" + str(len(candidate_events)))
 import pickle
-with open(output_path + '/event_catalogue-strain.pkl', 'wb') as f:
+with open(output_path + '/event_catalogue-strain-SecondHalf.pkl', 'wb') as f:
     pickle.dump(event_catalogue, f)      
-with open(output_path + '/co_event_strain.pkl', 'wb') as f:
+with open(output_path + '/co_event_strain-SecondHalf.pkl', 'wb') as f:
     pickle.dump(candidate_events, f)         
     ## Plot filtered results / mode temperatures --> wont be accurate for MAGE0 Data
     

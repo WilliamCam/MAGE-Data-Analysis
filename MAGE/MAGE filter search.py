@@ -17,10 +17,10 @@ from datetime import timedelta
 ## Transient filter search for MAGE data stream. First test designed for MAGE0 Data
 
 #load data file
-folder = r"C:\Users\21958742\MAGE/"
-exp_name = "MAGE3"
-run_name = "run2"
-identifier = 'run2-'
+folder = r"D:"
+exp_name = "MAGE4"
+run_name = "run3"
+identifier = 'run3-'
 
 files = listdir(folder + '/' + exp_name + '/' + run_name)
 Nfiles = len(files)
@@ -30,14 +30,20 @@ f = h5py.File(folder + '/' + exp_name + '/' + run_name + '/' + files[0], 'r')
 f1 = h5py.File(folder + '/' + exp_name + '/' + run_name + '/' + files[1], 'r')
 
 #load calibration data
-fsquid = open(folder + '/' + exp_name + '/calibration/SQUID gain models.txt')
-fresistance = open(folder + '/' + exp_name + '/calibration/Rs.txt')
+def read_two_column_data(file_path):
+    data = np.loadtxt(file_path)
+    column_1 = data[:, 0]  # First column
+    column_2 = data[:, 1]  # Second column
+    return np.array([column_1, column_2])
+
+Vphi = read_two_column_data(folder + '/' + exp_name + '/calibration/Vphi_squids_quartz_order.txt')
+Rlambda = read_two_column_data(folder + '/' + exp_name + '/calibration/Rs_new.txt')
 feffective_mass = open(folder + '/' + exp_name + '/calibration/Meff.txt')
 mode_distributions = np.genfromtxt(feffective_mass, delimiter=',', skip_header=1)
-squid_model = np.genfromtxt(fsquid, skip_header=1, delimiter=',')
-resistances = np.genfromtxt(fresistance, delimiter=',')
 meff = mode_distributions[:,1]
 xi = mode_distributions[:,2]
+Lin = 400e-9    # squid cali parameters
+Min = np.array([1 / 0.49 / 1e-6, 1 / 0.517 / 1e-6])
 
 Ninputs = len(f.keys())
 Nchannels = len(f['AI 0'].keys())//2
@@ -83,7 +89,7 @@ def optimal_filter(data, template, Fs, NFFT):
     return SNR, dat_filt
 
 # create numpy array with all data
-for file in range(15, Nfiles-1): #Current version of MAGE.vi gives false data in first file
+for file in range(1, Nfiles-1): #Current version of MAGE.vi gives false data in first file
     f = h5py.File(folder + '/' + exp_name + '/' + run_name + '/' + identifier + str(file) + '.hdf5', 'r')
     file_start = t_start + timedelta(seconds = file*Nsample*dt)
     for AI in range(Ninputs):
@@ -95,7 +101,7 @@ for file in range(15, Nfiles-1): #Current version of MAGE.vi gives false data in
             data_array[AI, channel, 1, :] = dataQ
 
     #Determine single sided power spectrum for each stream
-    NFFT = 2**12 # for NFFT < Nsample power spectrum will be averaged
+    NFFT = 2**13 # for NFFT < Nsample power spectrum will be averaged
     
     Sx = np.zeros((Ninputs, Nchannels, NFFT))
     Sy = np.zeros((Ninputs, Nchannels, NFFT))
@@ -165,24 +171,24 @@ for file in range(15, Nfiles-1): #Current version of MAGE.vi gives false data in
             height_array[AI, channel, :] = [h1*(1+(fcenter1/151.8)),h2*(1+(fcenter2/151.8))]
             fcenter_array[AI, channel, :] = [fcenter1, fcenter2]
             error_array[AI, channel, :] = [error1, error2]
-            if Gamma1 > Gamma_max or Gamma2 > Gamma_max or error1 > error_max or error2 > error_max: #Ignore bad fits
+            if (Gamma1 > Gamma_max and Gamma2 > Gamma_max) or (error1 > error_max and error2 > error_max): #Ignore bad fits
                 print("Input AI " + str(AI) + ", Channel " + str(channel+1) + ":WARNING: Bad mode detected, channel will be ignored")
 
-            # plt.ion()
-            # fig = plt.figure("IMPA DOWNLOAD")
-            # plt.axis('tight')
-            # plt.pause(0.05)
-            # plt.draw()
-            # fig.clf()
-            # ax = fig.add_subplot(111)
-            # ax.plot(fn_trim, Sx_trim, 'o', markersize=0.2)
-            # ax.set_title("Input AI " + str(AI) + ", Channel " + str(channel+1))
-            # #plt.plot(fn_n, out.init_fit, '--', label='initial fit')
-            # ax.plot(fn_trim, out.best_fit, '-', label='best fit I')
-            # ax.plot(fn_trim, out2.best_fit, '-', label='best fit Q')
-            # ax.set_yscale('log')
-            # #ax.set_xscale('log')
-            # ax.legend()
+            plt.ion()
+            fig = plt.figure("IMPA DOWNLOAD")
+            plt.axis('tight')
+            plt.pause(0.05)
+            plt.draw()
+            fig.clf()
+            ax = fig.add_subplot(111)
+            ax.plot(fn_trim, Sx_trim, 'o', markersize=0.2)
+            ax.set_title("Input AI " + str(AI) + ", Channel " + str(channel+1))
+            #plt.plot(fn_n, out.init_fit, '--', label='initial fit')
+            ax.plot(fn_trim, out.best_fit, '-', label='best fit I')
+            ax.plot(fn_trim, out2.best_fit, '-', label='best fit Q')
+            ax.set_yscale('log')
+            #ax.set_xscale('log')
+            ax.legend()
     
     
     #Filtering data
@@ -211,39 +217,40 @@ for file in range(15, Nfiles-1): #Current version of MAGE.vi gives false data in
             else:    
                 Rdat = np.sqrt(dataI**2+dataQ**2)
             f_demod = f['AI ' + str(AI)].attrs['Demod freqs AI ' + str(AI)][channel] # demodulation frequency
-            
-            Nfilter=int(Fs*5*tau1)
+            idx = (np.abs(np.array([tau1,tau2]) - 1.0)).argmin()
+            tau = np.array([tau1,tau2])[idx]
+            Nfilter=int(Fs*5*tau)
             tn = np.linspace(0,Nsample*dt,Nsample)
             t_sig = dt*np.linspace(0, Nfilter, Nfilter)
 
-            G = squid_model[AI][0]/np.sqrt(1+(f_demod/squid_model[AI][1])**2) #squid gain
+            G = (Vphi[AI, channel]*2000)/Min[AI]
 
+            kappa = np.sqrt(f_demod*2*np.pi*meff[channel]/(np.mean(Q_array[AI,channel]) * Rlambda[AI,channel]))
             
-            kappa = np.sqrt(f_demod*2*np.pi*meff[channel]/(np.mean(Q_array[AI, channel])*resistances[channel][AI]))
-            
-            template = np.exp(-t_sig/(tau1)) # template construction
+         
+            template = np.exp(-t_sig/(tau)) # template construction
             
             h = np.fft.ifft(np.fft.fft(Rdat[1:]/G)/(kappa*f_demod*2*np.pi)).real
             
             Zl = 1j*2*np.pi*f_demod*400e-9 #circuit input impedance
             Zc = np.abs(1/(1j*2*np.pi*f_demod*4e-12))
             ZlZc = (Zl+Zc)/(Zl*Zc)
-            R = resistances[channel][AI]
-            Zi = ZlZc + R
-            VtoT = 1/G*np.abs(Zi)/np.sqrt(4*kb*R)
+
+            Zi = ZlZc + Rlambda[AI, channel]
+            VtoT = 1/G*np.abs(Zi)/np.sqrt(4*kb*Rlambda[AI, channel])
             T = np.mean(height_array[AI, channel, :])*VtoT**2
             SNR, dat_filt = optimal_filter(h, template, Fs, NFFT)
             
             threshold = 0.5 ## effective noise temperature
-            peaks = find_peaks(SNR, height = threshold, distance = int(tau1*Fs), width = [100, 5e6], rel_height=1.0)
+            peaks = find_peaks(SNR, height = threshold, distance = int(tau*Fs), width = [100, 5e6], rel_height=1.0)
             
             # file_start_date = t_start + timedelta(seconds = file*Nsample*dt)
             event_day_string = datetime.strftime(file_start, "%d-%m-%y")
             
             ## data quality cuts
             if len(peaks[0])>0:
-                diverge_template1 = np.exp(-t_sig/(tau1/10.0))
-                diverge_template2 = np.exp(-t_sig/(tau1*10.0))
+                diverge_template1 = np.exp(-t_sig/(tau/10.0))
+                diverge_template2 = np.exp(-t_sig/(tau*10.0))
                 transient_SNR1, junk = optimal_filter(h, diverge_template1, Fs, NFFT)           
                 transient_SNR2, junk = optimal_filter(h, diverge_template2, Fs, NFFT)
                 plt.ion()
@@ -295,10 +302,11 @@ for file in range(15, Nfiles-1): #Current version of MAGE.vi gives false data in
                 if event0[1]['channel'] == event1[1]['channel']:
                     candidate_events.append([event0,event1])                    
     print("Candidate events :" + str(len(candidate_events)))
+    f.close()
 import pickle
-with open(output_path + '/event_catalogue-strain-Teff.pkl', 'wb') as f:
+with open(output_path + '/event_catalogue-strain-Half.pkl', 'wb') as f:
     pickle.dump(event_catalogue, f)      
-with open(output_path + '/co_event_strain-Teff.pkl', 'wb') as f:
+with open(output_path + '/co_event_strain-Half.pkl', 'wb') as f:
     pickle.dump(candidate_events, f)         
     ## Plot filtered results / mode temperatures --> wont be accurate for MAGE0 Data
     
