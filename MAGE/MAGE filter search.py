@@ -17,10 +17,10 @@ from datetime import timedelta
 ## Transient filter search for MAGE data stream. First test designed for MAGE0 Data
 
 #load data file
-folder = r"D:"
+folder =  r'C:/Users/00103619/MAGE/'
 exp_name = "MAGE4"
-run_name = "run3"
-identifier = 'run3-'
+run_name = "run4"
+identifier = 'run4--'
 
 files = listdir(folder + '/' + exp_name + '/' + run_name)
 Nfiles = len(files)
@@ -174,21 +174,21 @@ for file in range(1, Nfiles-1): #Current version of MAGE.vi gives false data in 
             if (Gamma1 > Gamma_max and Gamma2 > Gamma_max) or (error1 > error_max and error2 > error_max): #Ignore bad fits
                 print("Input AI " + str(AI) + ", Channel " + str(channel+1) + ":WARNING: Bad mode detected, channel will be ignored")
 
-            plt.ion()
-            fig = plt.figure("IMPA DOWNLOAD")
-            plt.axis('tight')
-            plt.pause(0.05)
-            plt.draw()
-            fig.clf()
-            ax = fig.add_subplot(111)
-            ax.plot(fn_trim, Sx_trim, 'o', markersize=0.2)
-            ax.set_title("Input AI " + str(AI) + ", Channel " + str(channel+1))
-            #plt.plot(fn_n, out.init_fit, '--', label='initial fit')
-            ax.plot(fn_trim, out.best_fit, '-', label='best fit I')
-            ax.plot(fn_trim, out2.best_fit, '-', label='best fit Q')
-            ax.set_yscale('log')
-            #ax.set_xscale('log')
-            ax.legend()
+            # plt.ion()
+            # fig = plt.figure("IMPA DOWNLOAD")
+            # plt.axis('tight')
+            # plt.pause(0.05)
+            # plt.draw()
+            # fig.clf()
+            # ax = fig.add_subplot(111)
+            # ax.plot(fn_trim, Sx_trim, 'o', markersize=0.2)
+            # ax.set_title("Input AI " + str(AI) + ", Channel " + str(channel+1))
+            # #plt.plot(fn_n, out.init_fit, '--', label='initial fit')
+            # ax.plot(fn_trim, out.best_fit, '-', label='best fit I')
+            # ax.plot(fn_trim, out2.best_fit, '-', label='best fit Q')
+            # ax.set_yscale('log')
+            # #ax.set_xscale('log')
+            # ax.legend()
     
     
     #Filtering data
