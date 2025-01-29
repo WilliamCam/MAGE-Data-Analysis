@@ -19,8 +19,8 @@ from datetime import timedelta
 #load data file
 folder =  r'C:/Users/00103619/MAGE/'
 exp_name = "MAGE4"
-run_name = "run4"
-identifier = 'run4--'
+run_name = "run6"
+identifier = 'run6-'
 
 files = listdir(folder + '/' + exp_name + '/' + run_name)
 Nfiles = len(files)
@@ -36,7 +36,7 @@ def read_two_column_data(file_path):
     column_2 = data[:, 1]  # Second column
     return np.array([column_1, column_2])
 
-Vphi = read_two_column_data(folder + '/' + exp_name + '/calibration/Vphi_squids_quartz_order.txt')
+Vphi = read_two_column_data(folder + '/' + exp_name + '/calibration/Vphi_run5_squids_quartz_order.txt')
 Rlambda = read_two_column_data(folder + '/' + exp_name + '/calibration/Rs_new.txt')
 feffective_mass = open(folder + '/' + exp_name + '/calibration/Meff.txt')
 mode_distributions = np.genfromtxt(feffective_mass, delimiter=',', skip_header=1)

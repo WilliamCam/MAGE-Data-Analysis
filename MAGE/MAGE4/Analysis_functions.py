@@ -12,7 +12,7 @@ import lmfit
 from scipy.fft import fft, fftfreq
 import nexusformat.nexus as nx
 import scipy.constants
-from lmfit.models import LorentzianModel, ConstantModel
+from lmfit.models import LorentzianModel, ConstantModel, LinearModel
 import sys
 import os
 
@@ -149,7 +149,7 @@ def lorentzian_fit_thermalpeak(mag, fn, fdemod, Plot=False, start = 0, stop = 16
         plt.show()
     return f_res, sigma, integral, Q, const
 
-def lorentzian_fit_thermalpeak_bis(mag, fn, fdemod, ai, ch, Plot=False, start=0, stop=1600):
+def lorentzian_fit_thermalpeak_bis(mag, fn, fdemod, ai, ch, Plot=False, span=300):
     """
     Fit a Lorentzian model to thermal peak data and return the fitted parameters, their errors, and the Q-factor.
 
@@ -175,12 +175,13 @@ def lorentzian_fit_thermalpeak_bis(mag, fn, fdemod, ai, ch, Plot=False, start=0,
     # Lorentzian and constant background models
     lor_mod = LorentzianModel(prefix='lor_')
     lin_mod = ConstantModel(prefix='lin_')
-
-    # Select the frequency and magnitude data to fit
-    if ai == 0 and ch == 12:
-        start, stop=2050, 2500
-    fn_fit = fn[start:stop]
-    linear_mag = mag[start:stop]
+    peak_index = np.where(mag==np.max(mag))[0][0]
+    if peak_index-span < 1:
+        fn_fit = fn[0:peak_index+span]
+        linear_mag = mag[0:peak_index+span]
+    else:
+        fn_fit = fn[peak_index-span:peak_index+span]
+        linear_mag = mag[peak_index-span:peak_index+span]
 
     # Make initial guesses for the parameters
     pars = lor_mod.guess(linear_mag, x=fn_fit)
@@ -197,14 +198,14 @@ def lorentzian_fit_thermalpeak_bis(mag, fn, fdemod, ai, ch, Plot=False, start=0,
     f_res = out.params["lor_center"].value + fdemod  # Resonance frequency, adjusted by demodulation frequency
     Q = f_res / Gamma  # Quality factor
     integral = out.params["lor_amplitude"].value  # Amplitude of the Lorentzian peak
+    height = out.params["lor_height"].value #Unnormalised height of Lorentzian peak
     sigma = out.params["lor_sigma"].value  # Lorentzian width (standard deviation)
-    const = out.params["lin_c"].value  # Constant offset (background)
 
     # Calculate the errors (standard errors of the parameters)
     f_res_err = out.params["lor_center"].stderr if out.params["lor_center"].stderr else 0.99  # Error on f_res
     sigma_err = out.params["lor_sigma"].stderr if out.params["lor_sigma"].stderr else 0.99  # Error on sigma
     Q_err = Q * np.sqrt((f_res_err / f_res) ** 2 + (sigma_err / Gamma) ** 2)  # Error on Q
-    const_err = out.params["lin_c"].stderr if out.params["lin_c"].stderr else 0.99  # Error on constant background
+
 
     # Plot the results if requested
     if Plot:
@@ -217,7 +218,7 @@ def lorentzian_fit_thermalpeak_bis(mag, fn, fdemod, ai, ch, Plot=False, start=0,
         plt.show()
 
     # Return the fitted parameters and their errors
-    return f_res, sigma, integral, Q, const, f_res_err, sigma_err, Q_err, const_err
+    return f_res, sigma, integral, Q, f_res_err, sigma_err, Q_err, height
 
 def lorentzian_fit_thermalpeak_bis_onlyFandQ(mag, fn, fdemod, ai, ch, Plot=False, start=0, stop=1600):
     """
@@ -585,3 +586,4 @@ def filter_strain_data_one_file(strain, tau, Fs, NFFT, file_start, fdemods, subr
                         catalog_event(event_catalogue, event_name, event_time, SNR[ai,ch], ai, ch, fdemods, strain[ai,ch], subrun, event_i)
 
     return SNR, filtered_strain, event_catalogue
+
