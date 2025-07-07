@@ -17,16 +17,16 @@ from datetime import timedelta
 ## Transient filter search for MAGE data stream. First test designed for MAGE0 Data
 
 #load data file
-folder =  r'C:/Users/00103619/MAGE/'
+folder =  r'C:\Users\00103619\MAGE\\'
 exp_name = "MAGE4"
-run_name = "run6"
-identifier = 'run6-'
+run_name = "run8"
+identifier = 'run8-'
 
 files = listdir(folder + '/' + exp_name + '/' + run_name)
 Nfiles = len(files)
 
 #meta data from first file
-f = h5py.File(folder + '/' + exp_name + '/' + run_name + '/' + files[0], 'r')
+f = h5py.File(folder + '/' + exp_name + '/' + run_name + '/' + files[1], 'r')
 f1 = h5py.File(folder + '/' + exp_name + '/' + run_name + '/' + files[1], 'r')
 
 #load calibration data
@@ -36,7 +36,7 @@ def read_two_column_data(file_path):
     column_2 = data[:, 1]  # Second column
     return np.array([column_1, column_2])
 
-Vphi = read_two_column_data(folder + '/' + exp_name + '/calibration/Vphi_run5_squids_quartz_order.txt')
+Vphi = np.array([890, 300])/1e6
 Rlambda = read_two_column_data(folder + '/' + exp_name + '/calibration/Rs_new.txt')
 feffective_mass = open(folder + '/' + exp_name + '/calibration/Meff.txt')
 mode_distributions = np.genfromtxt(feffective_mass, delimiter=',', skip_header=1)
@@ -89,9 +89,10 @@ def optimal_filter(data, template, Fs, NFFT):
     return SNR, dat_filt
 
 # create numpy array with all data
-for file in range(1, Nfiles-1): #Current version of MAGE.vi gives false data in first file
+for file in range(1, Nfiles): #Current version of MAGE.vi gives false data in first file
     f = h5py.File(folder + '/' + exp_name + '/' + run_name + '/' + identifier + str(file) + '.hdf5', 'r')
-    file_start = t_start + timedelta(seconds = file*Nsample*dt)
+    file_start_string =  f['AI 0'].attrs['date/time string']
+    file_start = datetime.strptime(file_start_string, 'UTC %d-%m-%y %H:%M:%S.%f ')
     for AI in range(Ninputs):
         for channel in range(Nchannels):
             dataI = f['AI ' + str(AI) + '/CH ' + str(channel+1) + '-I/Data'][:]*9.86e-10
@@ -223,7 +224,7 @@ for file in range(1, Nfiles-1): #Current version of MAGE.vi gives false data in 
             tn = np.linspace(0,Nsample*dt,Nsample)
             t_sig = dt*np.linspace(0, Nfilter, Nfilter)
 
-            G = (Vphi[AI, channel]*2000)/Min[AI]
+            G = (Vphi[AI]*2000)*Min[AI]
 
             kappa = np.sqrt(f_demod*2*np.pi*meff[channel]/(np.mean(Q_array[AI,channel]) * Rlambda[AI,channel]))
             
@@ -232,16 +233,11 @@ for file in range(1, Nfiles-1): #Current version of MAGE.vi gives false data in 
             
             h = np.fft.ifft(np.fft.fft(Rdat[1:]/G)/(kappa*f_demod*2*np.pi)).real
             
-            Zl = 1j*2*np.pi*f_demod*400e-9 #circuit input impedance
-            Zc = np.abs(1/(1j*2*np.pi*f_demod*4e-12))
-            ZlZc = (Zl+Zc)/(Zl*Zc)
-
-            Zi = ZlZc + Rlambda[AI, channel]
-            VtoT = 1/G*np.abs(Zi)/np.sqrt(4*kb*Rlambda[AI, channel])
-            T = np.mean(height_array[AI, channel, :])*VtoT**2
+   
+            T = np.mean(0.5*(f_demod*2*np.pi)**2*meff[channel]*h**2/kb)
             SNR, dat_filt = optimal_filter(h, template, Fs, NFFT)
             
-            threshold = 0.5 ## effective noise temperature
+            threshold = 1.0 ## effective noise temperature
             peaks = find_peaks(SNR, height = threshold, distance = int(tau*Fs), width = [100, 5e6], rel_height=1.0)
             
             # file_start_date = t_start + timedelta(seconds = file*Nsample*dt)
@@ -264,13 +260,12 @@ for file in range(1, Nfiles-1): #Current version of MAGE.vi gives false data in 
             # ax.plot(tn, SNR, label = 'SNR')
             # ax.legend()
             #ax.plot(peaks[0]*dt,peaks[1]['peak_heights'], linestyle = ' ', marker = 'x', color = 'black')
-            print("Effective mode Temperature was %1.2f K" % T)
             for event_i in peaks[0]:
                 #print('%1.2f'%(SNR[event_i]) + ', %1.2f' % (transient_SNR1[event_i]) + ', %1.2f' % (transient_SNR2[event_i]))
                 if ((SNR**2)[event_i] < (transient_SNR1**2)[event_i] or (SNR**2)[event_i] < (transient_SNR2**2)[event_i]):
-                    print("Transiently divergent feature detected of SNR %1.2f" % (SNR[event_i]) + ", performing quality cut")
+                    #print("Transiently divergent feature detected of SNR %1.2f" % (SNR[event_i]) + ", performing quality cut")
                     continue
-                print("Large event detected" + '\n')
+                #print("Large event detected" + '\n')
                 print("File " + str(file) + " Input AI " + str(AI) + ", Channel " + str(channel+1))
                 event_time = file_start + timedelta(seconds = event_i*dt)
                 event_name = datetime.strftime(event_time, "%d%m%y-%H:%M:%S") + "-AI" + str(AI) + "-ch" + str(channel+1) + "-SNR %1.2f" % (SNR[event_i])
@@ -281,35 +276,41 @@ for file in range(1, Nfiles-1): #Current version of MAGE.vi gives false data in 
                     event_catalogue_perfile[event_name] = {'time' : event_time, 'SNR' : SNR[event_i],'Teff' : T, 'input AI' : AI, 'channel' : channel+1, 'frequency' : f_demod, 'amplitude' : dat_filt[event_i], 'file N' : file, 'index' : event_i}
     # Coincident modes on one file
     print("Looking for Coincident events...")
-    times1 =  [event_catalogue_perfile[event]['time'].timestamp() for event in event_catalogue_perfile if (event_catalogue_perfile[event]['input AI'] == 1)]
-    times0 =  [event_catalogue_perfile[event]['time'].timestamp() for event in event_catalogue_perfile if (event_catalogue_perfile[event]['input AI'] == 0)]
     
-    coincident_t = []
-    for time0 in times0:
-        for time1 in times1:
-            if np.abs(time0-time1) < 0.05:
-                #print("Coincident Event at " + str(time0))
-                coincident_t.append(time0)
-                break
-    for ii in range(len(coincident_t)):
-        co_event_nn = ii
-        co_event = [(event, event_catalogue_perfile[event]) for event in event_catalogue_perfile if event_catalogue_perfile[event]['time'] == datetime.fromtimestamp(coincident_t[co_event_nn])]
-        co_event0 = [event for event in co_event if event[1]['input AI']==0]
-        co_event1 = [event for event in co_event if event[1]['input AI']==1]
+
+    for channel in range(Nchannels):
+        times0 = [event_catalogue_perfile[event]['time'].timestamp() for event in event_catalogue_perfile if 
+                  (event_catalogue_perfile[event]['input AI'] == 0) and (event_catalogue_perfile[event]['channel'] == channel+1)]
+        times1 = [event_catalogue_perfile[event]['time'].timestamp() for event in event_catalogue_perfile if 
+                  (event_catalogue_perfile[event]['input AI'] == 1) and (event_catalogue_perfile[event]['channel'] == channel+1)]
         
-        for event0 in co_event0:
-            for event1 in co_event1:
-                if event0[1]['channel'] == event1[1]['channel']:
-                    candidate_events.append([event0,event1])                    
+        coincident_t = []
+        for time0 in times0:
+            for time1 in times1:
+                if np.abs(time0-time1) < 3*dt:
+                    #print("Coincident Event at " + str(time0))
+                    coincident_t.append((time0,time1))
+                    continue
+        for ii in range(len(coincident_t)):
+            co_event_nn = ii
+            per_channel_events = [event for event in event_catalogue_perfile if (event_catalogue_perfile[event]['channel'] == channel+1)]
+            co_event0 = [(event, event_catalogue_perfile[event]) for event in per_channel_events if 
+                        (event_catalogue_perfile[event]['time'] == datetime.fromtimestamp(coincident_t[co_event_nn][0])) and
+                         event_catalogue_perfile[event]['input AI']==0]
+            co_event1 = [(event, event_catalogue_perfile[event]) for event in per_channel_events if 
+                        (event_catalogue_perfile[event]['time'] == datetime.fromtimestamp(coincident_t[co_event_nn][1])) and
+                        event_catalogue_perfile[event]['input AI']==1]
+            
+            for event0 in co_event0:
+                for event1 in co_event1:
+                    candidate_events.append([event0,event1])                  
     print("Candidate events :" + str(len(candidate_events)))
     f.close()
 import pickle
-with open(output_path + '/event_catalogue-strain-Half.pkl', 'wb') as f:
+with open(output_path + '/event_catalogue-pub.pkl', 'wb') as f:
     pickle.dump(event_catalogue, f)      
-with open(output_path + '/co_event_strain-Half.pkl', 'wb') as f:
+with open(output_path + '/co_event_strain-pub.pkl', 'wb') as f:
     pickle.dump(candidate_events, f)         
-    ## Plot filtered results / mode temperatures --> wont be accurate for MAGE0 Data
+
     
-    ## Transient search for Impulse events some decay shape (N consecutive samples with T>?)
     
-    ## 

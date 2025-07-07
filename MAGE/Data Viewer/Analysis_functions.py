@@ -225,7 +225,7 @@ def lorentzian_fit_thermalpeak_bis(mag, fn, fdemod, ai, ch, Plot=False, span=300
 
         return f_res, sigma, integral, Q, f_res_err, sigma_err, Q_err, height
 
-def lorentzian_fit_thermalpeak_bis_onlyFandQ(mag, fn, fdemod, ai, ch, Plot=False, span=300):
+def lorentzian_fit_thermalpeak_bis_onlyFandQ(mag, fn, fdemod, ai, ch, Plot=False, start=0, stop=1600):
     """
     Fit a Lorentzian model to thermal peak data and return the fitted parameters, their errors, and the Q-factor.
 
@@ -253,13 +253,10 @@ def lorentzian_fit_thermalpeak_bis_onlyFandQ(mag, fn, fdemod, ai, ch, Plot=False
     lin_mod = ConstantModel(prefix='lin_')
 
     # Select the frequency and magnitude data to fit
-    peak_index = np.where(mag==np.max(mag))[0][0]
-    if peak_index-span < 1:
-        fn_fit = fn[0:peak_index+span]
-        linear_mag = mag[0:peak_index+span]
-    else:
-        fn_fit = fn[peak_index-span:peak_index+span]
-        linear_mag = mag[peak_index-span:peak_index+span]
+    if ai == 0 and ch == 12:
+        start, stop=2050, 2500
+    fn_fit = fn[start:stop]
+    linear_mag = mag[start:stop]
 
     # Make initial guesses for the parameters
     pars = lor_mod.guess(linear_mag, x=fn_fit)
