@@ -19,8 +19,8 @@ from datetime import timedelta
 #load data file
 folder =  r'C:\Users\00103619\MAGE\\'
 exp_name = "MAGE4"
-run_name = "run8"
-identifier = 'run8-'
+run_name = "run13"
+identifier = 'run13-'
 
 files = listdir(folder + '/' + exp_name + '/' + run_name)
 Nfiles = len(files)
@@ -90,6 +90,8 @@ def optimal_filter(data, template, Fs, NFFT):
 
 # create numpy array with all data
 for file in range(1, Nfiles): #Current version of MAGE.vi gives false data in first file
+    if file==4:
+        continue
     f = h5py.File(folder + '/' + exp_name + '/' + run_name + '/' + identifier + str(file) + '.hdf5', 'r')
     file_start_string =  f['AI 0'].attrs['date/time string']
     file_start = datetime.strptime(file_start_string, 'UTC %d-%m-%y %H:%M:%S.%f ')
