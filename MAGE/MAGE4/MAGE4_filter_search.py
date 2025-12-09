@@ -8,7 +8,6 @@ from scipy.signal import welch, csd
 from scipy.signal import find_peaks
 import lmfit
 from scipy.fft import fft, fftfreq
-import nexusformat.nexus as nx
 import scipy.constants
 from lmfit.models import LorentzianModel, ConstantModel
 import sys

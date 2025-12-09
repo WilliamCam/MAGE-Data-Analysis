@@ -10,7 +10,6 @@ from scipy.signal import welch, csd
 from scipy.signal import find_peaks
 import lmfit
 from scipy.fft import fft, fftfreq
-import nexusformat.nexus as nx
 import scipy.constants
 from lmfit.models import LorentzianModel, ConstantModel, LinearModel
 import sys
@@ -48,6 +47,32 @@ def get_resistances(filename):
 def get_squid_gain(filename):
     gains = open(filename='home/leo_maria/Desktop/UWA/MAGE/October/Singletone_last/Vphi_last_singletone.txt')
     return gains
+
+#TODO: generalise naming convention for Demod Freqs, date/time string, Fs, etc.
+def get_meta_data(filename):
+    '''Reads file of experimental run and retrieves important information'''
+    meta_dict={}
+    f = h5py.File(filename, 'r')
+    N_detectors = len(f.keys())
+    detector_names = list(f.keys())
+    N_channels = len(f[detector_names[0]].keys())
+    Fs = f[detector_names[0]].attrs['Fs']
+    _lo_frequencies={}
+    for ai,name in enumerate(detector_names):
+        lo_frequencies = np.zeros(N_channels)
+        for ch in range(N_channels):
+            lo_frequencies[ch] = f['AI ' + str(ai)].attrs['Demod freqs AI ' + str(ai)][ch]
+        _lo_frequencies[name]=lo_frequencies 
+    
+    t_start_string = str(f[detector_names[0]].attrs['date/time string'])
+    t_start = datetime.strptime(t_start_string, 'UTC %d-%m-%y %H:%M:%S.%f ')
+    meta_dict['N_detectors'] = N_detectors
+    meta_dict['N_channels'] = N_channels
+    meta_dict['sample_rate'] = Fs
+    meta_dict['lo_frequencies'] = _lo_frequencies
+    meta_dict['start_time'] = t_start
+    return meta_dict
+
 
 def get_meta_data_from_first_file(filename):
     '''Reads first file of experimental run and retrieves important information. Returns number of inputs (2), number of channels (16), number of samples in file, sample frequency, time interval between consecutive samples, demodulation frequencies, date of start'''
@@ -225,7 +250,7 @@ def lorentzian_fit_thermalpeak_bis(mag, fn, fdemod, ai, ch, Plot=False, span=300
 
         return f_res, sigma, integral, Q, f_res_err, sigma_err, Q_err, height
 
-def lorentzian_fit_thermalpeak_bis_onlyFandQ(mag, fn, fdemod, ai, ch, Plot=False, start=0, stop=1600):
+def lorentzian_fit_thermalpeak_bis_onlyFandQ(mag, fn, fdemod, ai, ch, Plot=False, span=300):
     """
     Fit a Lorentzian model to thermal peak data and return the fitted parameters, their errors, and the Q-factor.
 
@@ -253,10 +278,13 @@ def lorentzian_fit_thermalpeak_bis_onlyFandQ(mag, fn, fdemod, ai, ch, Plot=False
     lin_mod = ConstantModel(prefix='lin_')
 
     # Select the frequency and magnitude data to fit
-    if ai == 0 and ch == 12:
-        start, stop=2050, 2500
-    fn_fit = fn[start:stop]
-    linear_mag = mag[start:stop]
+    peak_index = np.where(mag==np.max(mag))[0][0]
+    if peak_index-span < 1:
+        fn_fit = fn[0:peak_index+span]
+        linear_mag = mag[0:peak_index+span]
+    else:
+        fn_fit = fn[peak_index-span:peak_index+span]
+        linear_mag = mag[peak_index-span:peak_index+span]
 
     # Make initial guesses for the parameters
     pars = lor_mod.guess(linear_mag, x=fn_fit)

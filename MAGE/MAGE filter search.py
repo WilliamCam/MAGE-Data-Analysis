@@ -17,10 +17,10 @@ from datetime import timedelta
 ## Transient filter search for MAGE data stream. First test designed for MAGE0 Data
 
 #load data file
-folder =  r'C:\Users\00103619\MAGE\\'
-exp_name = "MAGE4"
-run_name = "run13"
-identifier = 'run13-'
+folder =  r'D:/'
+exp_name = "CSL"
+run_name = "run1"
+identifier = 'run1-'
 
 files = listdir(folder + '/' + exp_name + '/' + run_name)
 Nfiles = len(files)
@@ -36,8 +36,11 @@ def read_two_column_data(file_path):
     column_2 = data[:, 1]  # Second column
     return np.array([column_1, column_2])
 
+co_analysis=False
+show_plot = False
+
 Vphi = np.array([890, 300])/1e6
-Rlambda = read_two_column_data(folder + '/' + exp_name + '/calibration/Rs_new.txt')
+Rlambda = read_two_column_data('D:\CSL\calibration/Rs_new.txt')
 feffective_mass = open(folder + '/' + exp_name + '/calibration/Meff.txt')
 mode_distributions = np.genfromtxt(feffective_mass, delimiter=',', skip_header=1)
 meff = mode_distributions[:,1]
@@ -46,7 +49,9 @@ Lin = 400e-9    # squid cali parameters
 Min = np.array([1 / 0.49 / 1e-6, 1 / 0.517 / 1e-6])
 
 Ninputs = len(f.keys())
+Ninputs = 1 ## CSL 26-11-25
 Nchannels = len(f['AI 0'].keys())//2
+Nchannels = 1 ## CSL 26-11-25
 Nsample = len(f1['AI 0/CH 1-I/Data'][:])
 Fs = f['AI 0'].attrs['Fs']
 dt = 1/Fs
@@ -90,7 +95,7 @@ def optimal_filter(data, template, Fs, NFFT):
 
 # create numpy array with all data
 for file in range(1, Nfiles): #Current version of MAGE.vi gives false data in first file
-    if file==4:
+    if file>701: #avoid files
         continue
     f = h5py.File(folder + '/' + exp_name + '/' + run_name + '/' + identifier + str(file) + '.hdf5', 'r')
     file_start_string =  f['AI 0'].attrs['date/time string']
@@ -176,22 +181,22 @@ for file in range(1, Nfiles): #Current version of MAGE.vi gives false data in fi
             error_array[AI, channel, :] = [error1, error2]
             if (Gamma1 > Gamma_max and Gamma2 > Gamma_max) or (error1 > error_max and error2 > error_max): #Ignore bad fits
                 print("Input AI " + str(AI) + ", Channel " + str(channel+1) + ":WARNING: Bad mode detected, channel will be ignored")
-
-            # plt.ion()
-            # fig = plt.figure("IMPA DOWNLOAD")
-            # plt.axis('tight')
-            # plt.pause(0.05)
-            # plt.draw()
-            # fig.clf()
-            # ax = fig.add_subplot(111)
-            # ax.plot(fn_trim, Sx_trim, 'o', markersize=0.2)
-            # ax.set_title("Input AI " + str(AI) + ", Channel " + str(channel+1))
-            # #plt.plot(fn_n, out.init_fit, '--', label='initial fit')
-            # ax.plot(fn_trim, out.best_fit, '-', label='best fit I')
-            # ax.plot(fn_trim, out2.best_fit, '-', label='best fit Q')
-            # ax.set_yscale('log')
-            # #ax.set_xscale('log')
-            # ax.legend()
+            if show_plot:        
+                plt.ion()
+                fig = plt.figure("IMPA DOWNLOAD")
+                plt.axis('tight')
+                plt.pause(0.05)
+                plt.draw()
+                fig.clf()
+                ax = fig.add_subplot(111)
+                ax.plot(fn_trim, Sx_trim, 'o', markersize=0.2)
+                ax.set_title("Input AI " + str(AI) + ", Channel " + str(channel+1))
+                #plt.plot(fn_n, out.init_fit, '--', label='initial fit')
+                ax.plot(fn_trim, out.best_fit, '-', label='best fit I')
+                ax.plot(fn_trim, out2.best_fit, '-', label='best fit Q')
+                ax.set_yscale('log')
+                #ax.set_xscale('log')
+                ax.legend()
     
     
     #Filtering data
@@ -277,42 +282,44 @@ for file in range(1, Nfiles): #Current version of MAGE.vi gives false data in fi
                 if event_name not in event_catalogue_perfile:
                     event_catalogue_perfile[event_name] = {'time' : event_time, 'SNR' : SNR[event_i],'Teff' : T, 'input AI' : AI, 'channel' : channel+1, 'frequency' : f_demod, 'amplitude' : dat_filt[event_i], 'file N' : file, 'index' : event_i}
     # Coincident modes on one file
-    print("Looking for Coincident events...")
-    
-
-    for channel in range(Nchannels):
-        times0 = [event_catalogue_perfile[event]['time'].timestamp() for event in event_catalogue_perfile if 
-                  (event_catalogue_perfile[event]['input AI'] == 0) and (event_catalogue_perfile[event]['channel'] == channel+1)]
-        times1 = [event_catalogue_perfile[event]['time'].timestamp() for event in event_catalogue_perfile if 
-                  (event_catalogue_perfile[event]['input AI'] == 1) and (event_catalogue_perfile[event]['channel'] == channel+1)]
+    if co_analysis:
+        print("Looking for Coincident events...")
         
-        coincident_t = []
-        for time0 in times0:
-            for time1 in times1:
-                if np.abs(time0-time1) < 3*dt:
-                    #print("Coincident Event at " + str(time0))
-                    coincident_t.append((time0,time1))
-                    continue
-        for ii in range(len(coincident_t)):
-            co_event_nn = ii
-            per_channel_events = [event for event in event_catalogue_perfile if (event_catalogue_perfile[event]['channel'] == channel+1)]
-            co_event0 = [(event, event_catalogue_perfile[event]) for event in per_channel_events if 
-                        (event_catalogue_perfile[event]['time'] == datetime.fromtimestamp(coincident_t[co_event_nn][0])) and
-                         event_catalogue_perfile[event]['input AI']==0]
-            co_event1 = [(event, event_catalogue_perfile[event]) for event in per_channel_events if 
-                        (event_catalogue_perfile[event]['time'] == datetime.fromtimestamp(coincident_t[co_event_nn][1])) and
-                        event_catalogue_perfile[event]['input AI']==1]
+    
+        for channel in range(Nchannels):
+            times0 = [event_catalogue_perfile[event]['time'].timestamp() for event in event_catalogue_perfile if 
+                      (event_catalogue_perfile[event]['input AI'] == 0) and (event_catalogue_perfile[event]['channel'] == channel+1)]
+            times1 = [event_catalogue_perfile[event]['time'].timestamp() for event in event_catalogue_perfile if 
+                      (event_catalogue_perfile[event]['input AI'] == 1) and (event_catalogue_perfile[event]['channel'] == channel+1)]
             
-            for event0 in co_event0:
-                for event1 in co_event1:
-                    candidate_events.append([event0,event1])                  
-    print("Candidate events :" + str(len(candidate_events)))
+            coincident_t = []
+            for time0 in times0:
+                for time1 in times1:
+                    if np.abs(time0-time1) < 3*dt:
+                        #print("Coincident Event at " + str(time0))
+                        coincident_t.append((time0,time1))
+                        continue
+            for ii in range(len(coincident_t)):
+                co_event_nn = ii
+                per_channel_events = [event for event in event_catalogue_perfile if (event_catalogue_perfile[event]['channel'] == channel+1)]
+                co_event0 = [(event, event_catalogue_perfile[event]) for event in per_channel_events if 
+                            (event_catalogue_perfile[event]['time'] == datetime.fromtimestamp(coincident_t[co_event_nn][0])) and
+                             event_catalogue_perfile[event]['input AI']==0]
+                co_event1 = [(event, event_catalogue_perfile[event]) for event in per_channel_events if 
+                            (event_catalogue_perfile[event]['time'] == datetime.fromtimestamp(coincident_t[co_event_nn][1])) and
+                            event_catalogue_perfile[event]['input AI']==1]
+                
+                for event0 in co_event0:
+                    for event1 in co_event1:
+                        candidate_events.append([event0,event1])                  
+        print("Candidate events :" + str(len(candidate_events)))
     f.close()
 import pickle
 with open(output_path + '/event_catalogue-pub.pkl', 'wb') as f:
-    pickle.dump(event_catalogue, f)      
-with open(output_path + '/co_event_strain-pub.pkl', 'wb') as f:
-    pickle.dump(candidate_events, f)         
+    pickle.dump(event_catalogue, f)
+if co_analysis:      
+    with open(output_path + '/co_event_strain-pub.pkl', 'wb') as f:
+        pickle.dump(candidate_events, f)         
 
     
     

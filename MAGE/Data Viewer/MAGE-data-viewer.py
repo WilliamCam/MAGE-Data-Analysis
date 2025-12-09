@@ -66,7 +66,7 @@ class StartPage(tk.Frame):
     def __init__(self, parent, controller):
         tk.Frame.__init__(self,parent)
         self.controller = controller
-        image = Image.open("./assets/MAGE_logo.png")
+        image = Image.open(r"assets/MAGE_logo.png")
         img = image.resize((250,250))
         img2 = ImageTk.PhotoImage(img)
         
@@ -225,25 +225,25 @@ class DataPlotter(tk.Frame):
                 break
         return ret
     
-    def select_data(self):
-        file = self.content_listbox.curselection
-        self.data_ch = utilities.data_channel(self, file, AI, channel)
+#     def select_data(self):
+#         file = self.content_listbox.curselection
+#         self.data_ch = utilities.data_channel(self, file, AI, channel)
     
-    def animate(i):
-        f = data_ch.File
-        dataI = f['AI ' + str(data_channel.AI) + '/CH ' + str(data_channel.channel+1) + '-I/Data'][:]*9.86e-10
-        dataQ = f['AI ' + str(data_channel.AI) + '/CH ' + str(data_channel.channel+1) + '-Q/Data'][:]*9.86e-10
-        ax.plot(dataI)
-        ax.plot(dataQ)
-        ax.plot()
+#     def animate(i):
+#         f = data_ch.File
+#         dataI = f['AI ' + str(data_channel.AI) + '/CH ' + str(data_channel.channel+1) + '-I/Data'][:]*9.86e-10
+#         dataQ = f['AI ' + str(data_channel.AI) + '/CH ' + str(data_channel.channel+1) + '-Q/Data'][:]*9.86e-10
+#         ax.plot(dataI)
+#         ax.plot(dataQ)
+#         ax.plot()
         
-try:
-    from ctypes import windll
+# try:
+#     from ctypes import windll
 
-    windll.shcore.SetProcessDpiAwareness(1)
-finally:
-    if __name__ == "__main__":
-        app = mainFrame()
-        ani = animation.FuncAnimation(f,app.frames[DataPlotter].animate, interval=1000)
-        app.mainloop()
+#     windll.shcore.SetProcessDpiAwareness(1)
+# finally:
+#     if __name__ == "__main__":
+#         app = mainFrame()
+#         ani = animation.FuncAnimation(f,app.frames[DataPlotter].animate, interval=1000)
+#         app.mainloop()
             
