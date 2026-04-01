@@ -1,4 +1,47 @@
 #Utilities for analysing transient events in MAGE data files.
+import Analysis_functions
+import dataStream
+import numpy as np
+
+#Helper function to read calibration data.
+def read_two_column_data(file_path):
+    data = np.loadtxt(file_path)
+    column_1 = data[:, 0]  # First column
+    column_2 = data[:, 1]  # Second column
+    return np.array([column_1, column_2])
+
+def import_calibration_data(calibration_directory, run:dataStream.Run):
+    pass
+
+
+
+def optimal_filter_search(run:dataStream.Run, template, output_directory, 
+        calibration_directory = None, co_analysis=False, show_plot=False, 
+        Lin = 400e-9):
+    files = run.files
+    if calibration_directory:
+        pass
+    pass
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 def large_events_by_SNR(event_catalogue, detectors, modes, SNR_bounds=[5.0,1000.0]):
     """

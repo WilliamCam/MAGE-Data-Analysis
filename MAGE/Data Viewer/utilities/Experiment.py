@@ -1,8 +1,10 @@
 #TODO: Separate codebase into modules, define different experiment types
+from importlib.resources import path
 import dataStream
 import EventSearchUtils
 from typing import Optional, List, Dict, Callable
 import re
+import pickle
 
 class Experiment:
     """Container for multiple Runs (each run contains multiple DataFile instances)."""
@@ -23,12 +25,16 @@ class Experiment:
         return len(self.runs)
     
 #TODO: Place matched filter search in its own module
-import pickle
+
 #This class stores the output of a matched filter search.
 class FilterSearchResult(Experiment):
-    def __init__(self, output_path:str, name: Optional[str] = None):
+    def __init__(self, output_directory: str, name: Optional[str] = None):
         super().__init__(name)
-        def load_search_output(self, output_path: str):
-            with open(output_path, 'rb') as f:
-                event_catalogue = pickle.load(f)
-            pass
+        #directory to store search result (pickle files)
+        self.output_directory = output_directory
+        pass
+        
+
+
+
+    

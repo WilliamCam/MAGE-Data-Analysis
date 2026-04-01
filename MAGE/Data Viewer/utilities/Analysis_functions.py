@@ -620,3 +620,10 @@ def filter_strain_data_one_file(strain, tau, Fs, NFFT, file_start, fdemods, subr
 
     return SNR, filtered_strain, event_catalogue
 
+#Helper function for reading calibration data in txt files.
+def read_two_column_data(file_path):
+    data = np.loadtxt(file_path)
+    column_1 = data[:, 0]  # First column
+    column_2 = data[:, 1]  # Second column
+    return np.array([column_1, column_2])
+
