@@ -191,7 +191,6 @@ class Run:
         """Add crystal calibration data for a detector."""
         self.crystals[crystal.detector_name] = crystal
     
-    
             
 
     def load_files_from_folder(self, folder: str, pattern: Optional[str] = None,
