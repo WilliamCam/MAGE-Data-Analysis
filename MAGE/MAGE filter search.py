@@ -17,10 +17,10 @@ from datetime import timedelta
 ## Transient filter search for MAGE data stream. First test designed for MAGE0 Data
 
 #load data file
-folder =  r'D:/'
-exp_name = "CSL"
-run_name = "run1"
-identifier = 'run1-'
+folder =  r'F:/MAGE/'
+exp_name = "data_mK"
+run_name = "run3"
+identifier = 'run3_cont-'
 
 files = listdir(folder + '/' + exp_name + '/' + run_name)
 Nfiles = len(files)
@@ -36,12 +36,12 @@ def read_two_column_data(file_path):
     column_2 = data[:, 1]  # Second column
     return np.array([column_1, column_2])
 
-co_analysis=False
-show_plot = False
+co_analysis=True
+show_plot = True
 
 Vphi = np.array([890, 300])/1e6
-Rlambda = read_two_column_data('D:\CSL\calibration/Rs_new.txt')
-feffective_mass = open(folder + '/' + exp_name + '/calibration/Meff.txt')
+Rlambda = read_two_column_data(folder + '/' + exp_name + '/calibration_4K/Rs_new.txt')
+feffective_mass = open(folder + '/' + exp_name + '/calibration_4K/Meff.txt')
 mode_distributions = np.genfromtxt(feffective_mass, delimiter=',', skip_header=1)
 meff = mode_distributions[:,1]
 xi = mode_distributions[:,2]
@@ -109,7 +109,7 @@ for file in range(1, Nfiles): #Current version of MAGE.vi gives false data in fi
             data_array[AI, channel, 1, :] = dataQ
 
     #Determine single sided power spectrum for each stream
-    NFFT = 2**13 # for NFFT < Nsample power spectrum will be averaged
+    NFFT = 2**14 # for NFFT < Nsample power spectrum will be averaged
     
     Sx = np.zeros((Ninputs, Nchannels, NFFT))
     Sy = np.zeros((Ninputs, Nchannels, NFFT))

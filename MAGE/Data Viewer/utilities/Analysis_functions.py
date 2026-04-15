@@ -49,13 +49,16 @@ def get_squid_gain(filename):
     return gains
 
 #TODO: generalise naming convention for Demod Freqs, date/time string, Fs, etc.
-def get_meta_data(filename):
+def get_meta_data(filename, IQ_channels = True):
     '''Reads file of experimental run and retrieves important information'''
     meta_dict={}
     f = h5py.File(filename, 'r')
     N_detectors = len(f.keys())
     detector_names = list(f.keys())
-    N_channels = len(f[detector_names[0]].keys())
+    if IQ_channels:
+        N_channels = len(f[detector_names[0]].keys()) // 2
+    else:
+        N_channels = len(f[detector_names[0]].keys())
     Fs = f[detector_names[0]].attrs['Fs']
     _lo_frequencies={}
     for ai,name in enumerate(detector_names):
@@ -67,6 +70,7 @@ def get_meta_data(filename):
     t_start_string = str(f[detector_names[0]].attrs['date/time string'])
     t_start = datetime.strptime(t_start_string, 'UTC %d-%m-%y %H:%M:%S.%f ')
     meta_dict['N_detectors'] = N_detectors
+    meta_dict['N_samples'] = len(f[detector_names[0] + '/CH 1-I/Data'][:])
     meta_dict['N_channels'] = N_channels
     meta_dict['sample_rate'] = Fs
     meta_dict['lo_frequencies'] = _lo_frequencies
@@ -141,40 +145,7 @@ def spectrum_from_IQ_td(iqdata, Fs, NFFT=2**13):
             fns[AI, channel, :] = fn
     return fns, Sx, Sy, Sr
 
-def lorentzian_fit_thermalpeak(mag, fn, fdemod, Plot=False, start = 0, stop = 1600):
-
-    # fit of resonance
-    lor_mod = LorentzianModel(prefix = 'lor_') 
-    #lin_mod = LinearModel(prefix='lin_')
-    lin_mod = ConstantModel(prefix='lin_')
-    fn_fit = fn[start:stop]
-    linear_mag = mag[start:stop] # Should be correct?
-    pars = lor_mod.guess(linear_mag, x=fn_fit)
-    pars.update(lin_mod.make_params())
-    mod = lin_mod + lor_mod
-    out = mod.fit(linear_mag, pars, x=fn_fit)
-
-    # Calculation of Q's
-    Gamma = out.params["lor_sigma"].value * 2   # is it correct to multiply by 2?
-    f_res = out.params["lor_center"].value + fdemod
-    Q = f_res/(Gamma)
-    integral = out.params["lor_amplitude"].value
-    sigma = out.params["lor_sigma"].value
-    const = out.params["lin_c"].value
-
-    # plot of each fit
-    if Plot:
-        plt.plot(fn_fit, linear_mag, 'o', label = 'data')
-        plt.title('Frequency: ' + str(f_res) + ' Hz')
-        plt.plot(fn_fit, out.best_fit, '-', label='best fit')
-        plt.xlabel('Frrequency[Hz]')
-        plt.ylabel('PSD[V/rtHz]')
-        #plt.xlim(fn[710], fn[870])
-        plt.legend()
-        plt.show()
-    return f_res, sigma, integral, Q, const
-
-def lorentzian_fit_thermalpeak_bis(mag, fn, fdemod, ai, ch, Plot=False, span=300, noise_ret = False):
+def lorentzian_fit_thermalpeak(mag, fn, fdemod, Plot=False, span=300):
     """
     Fit a Lorentzian model to thermal peak data and return the fitted parameters, their errors, and the Q-factor.
 
@@ -235,6 +206,12 @@ def lorentzian_fit_thermalpeak_bis(mag, fn, fdemod, ai, ch, Plot=False, span=300
 
     # Plot the results if requested
     if Plot:
+        plt.ion()
+        fig = plt.figure("IMPA DOWNLOAD")
+        plt.axis('tight')
+        plt.pause(0.05)
+        plt.draw()
+        fig.clf()
         plt.plot(fn_fit, linear_mag, 'o', label='Data')
         plt.title('Fitted Lorentzian Peak: Frequency = {:.2f} Hz'.format(f_res))
         plt.plot(fn_fit, out.best_fit, '-', label='Best Fit')
@@ -244,11 +221,8 @@ def lorentzian_fit_thermalpeak_bis(mag, fn, fdemod, ai, ch, Plot=False, span=300
         plt.show()
 
     # Return the fitted parameters and their errors
-    if noise_ret:
-        return f_res, sigma, integral, Q, f_res_err, sigma_err, Q_err, height, noise_val
-    else:
-
-        return f_res, sigma, integral, Q, f_res_err, sigma_err, Q_err, height
+    ret = {'centre_freqeuncy': f_res, 'linewidth': sigma, 'amplitude': integral, 'Q_factor' : Q, 'center_frequency_error': f_res_err, 'linewidth_error': sigma_err, 'Q_factor_error': Q_err, 'height': height, 'noise_level': noise_val}
+    return ret
 
 def lorentzian_fit_thermalpeak_bis_onlyFandQ(mag, fn, fdemod, ai, ch, Plot=False, span=300):
     """
