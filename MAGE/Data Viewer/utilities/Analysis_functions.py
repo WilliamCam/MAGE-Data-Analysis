@@ -209,22 +209,22 @@ def lorentzian_fit_thermalpeak(mag, fn, fdemod, Plot=False, span=300):
         plt.ion()
         fig = plt.figure("IMPA DOWNLOAD")
         plt.axis('tight')
+        fig.clf()
+        ax = fig.add_subplot(111)
+        ax.plot(fn_fit, linear_mag, 'o', markersize=0.2)
+        ax.set_title(fdemod)
+        ax.plot(fn_fit, out.best_fit, '-', label='fit')
+        ax.set_yscale('log')
+        #ax.set_xscale('log')
+        ax.legend()
         plt.pause(0.05)
         plt.draw()
-        fig.clf()
-        plt.plot(fn_fit, linear_mag, 'o', label='Data')
-        plt.title('Fitted Lorentzian Peak: Frequency = {:.2f} Hz'.format(f_res))
-        plt.plot(fn_fit, out.best_fit, '-', label='Best Fit')
-        plt.xlabel('Frequency (Hz)')
-        plt.ylabel('PSD (V/√Hz)')
-        plt.legend()
-        plt.show()
 
     # Return the fitted parameters and their errors
     ret = {'centre_freqeuncy': f_res, 'linewidth': sigma, 'amplitude': integral, 'Q_factor' : Q, 'center_frequency_error': f_res_err, 'linewidth_error': sigma_err, 'Q_factor_error': Q_err, 'height': height, 'noise_level': noise_val}
     return ret
 
-def lorentzian_fit_thermalpeak_bis_onlyFandQ(mag, fn, fdemod, ai, ch, Plot=False, span=300):
+def lorentzian_fit_thermalpeak_bis_onlyFandQ(mag, fn, fdemod, Plot=False, span=300):
     """
     Fit a Lorentzian model to thermal peak data and return the fitted parameters, their errors, and the Q-factor.
 

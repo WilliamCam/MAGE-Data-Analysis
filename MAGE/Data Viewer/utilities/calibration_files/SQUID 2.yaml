@@ -1,0 +1,5 @@
+name: SQUID 2
+serial_number: '12345'
+corner_frequency: 10000000.0
+Vphi: 0.0003
+Min: 2.0e-09

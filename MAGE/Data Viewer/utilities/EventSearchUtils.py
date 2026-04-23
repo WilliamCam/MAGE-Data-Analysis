@@ -2,6 +2,7 @@
 import Analysis_functions
 import dataStream
 import numpy as np
+import os
 
 #Helper function to read calibration data.
 def read_two_column_data(file_path):
@@ -10,8 +11,31 @@ def read_two_column_data(file_path):
     column_2 = data[:, 1]  # Second column
     return np.array([column_1, column_2])
 
-def import_calibration_data(calibration_directory, run:dataStream.Run):
-    pass
+def import_calibration_data(calibration_directory, run:dataStream.Run, config_yaml_path=None):
+    """
+    Load calibration data for a run from config.yaml and corresponding YAML files.
+    
+    Args:
+        calibration_directory: Path to directory containing config.yaml and calibration files
+        run: dataStream.Run object to populate with calibration data
+        config_yaml_path: Optional path to config.yaml (defaults to calibration_directory/config.yaml)
+    
+    Returns:
+        Tuple of (squids dict, crystals dict) from the parent Experiment
+    """
+    if config_yaml_path is None:
+        config_yaml_path = os.path.join(calibration_directory, 'config.yaml')
+    
+    if not os.path.exists(config_yaml_path):
+        raise FileNotFoundError(f"Config file not found: {config_yaml_path}")
+    
+    # Use parent Experiment's read_calibration method
+    if run.parent:
+        experiment = run.parent
+        return experiment.read_calibration(config_yaml_path)
+    else:
+        raise ValueError("Run object has no parent Experiment")
+
 
 
 
