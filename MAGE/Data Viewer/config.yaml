@@ -1,0 +1,81 @@
+Detectors:
+- name: AI 0
+  SQUID:
+    name: SQUID 1
+    serial_number: '12345'
+  crystal:
+    name: Crystal 1
+    serial_number: '54321'
+  modes:
+  - name: C300
+    channel: CH 1
+  - name: C302
+    channel: CH 2
+  - name: C320
+    channel: CH 3
+  - name: B300
+    channel: CH 4
+  - name: B302
+    channel: CH 5
+  - name: C520
+    channel: CH 6
+  - name: B500
+    channel: CH 7
+  - name: B524
+    channel: CH 8
+  - name: A300
+    channel: CH 9
+  - name: B320
+    channel: CH 10
+  - name: C500
+    channel: CH 11
+  - name: C502
+    channel: CH 12
+  - name: B520
+    channel: CH 13
+  - name: B502
+    channel: CH 14
+  - name: A320
+    channel: CH 15
+  - name: A500
+    channel: CH 16
+- name: AI 1
+  SQUID:
+    name: SQUID 2
+    serial_number: '67890'
+  crystal:
+    name: Crystal 2
+    serial_number: 09876
+  modes:
+  - name: C300
+    channel: CH 1
+  - name: C302
+    channel: CH 2
+  - name: C320
+    channel: CH 3
+  - name: B300
+    channel: CH 4
+  - name: B302
+    channel: CH 5
+  - name: C520
+    channel: CH 6
+  - name: B500
+    channel: CH 7
+  - name: B524
+    channel: CH 8
+  - name: A300
+    channel: CH 9
+  - name: B320
+    channel: CH 10
+  - name: C500
+    channel: CH 11
+  - name: C502
+    channel: CH 12
+  - name: B520
+    channel: CH 13
+  - name: B502
+    channel: CH 14
+  - name: A320
+    channel: CH 15
+  - name: A500
+    channel: CH 16
