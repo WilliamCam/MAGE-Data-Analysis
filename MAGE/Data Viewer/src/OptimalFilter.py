@@ -132,7 +132,7 @@ class FilterSearch(experiment.Experiment):
                         continue
 
                     strain, T = active_channel.calibrate_strain(f_demod, np.max([Q1,Q2]), Rlambda, meff, G)
-                    active_channel.clear_data()
+                    #active_channel.clear_data()
 
                     tau1, tau2 = np.array([Q1,Q2])/(np.pi*f_demod)
                     idx = (np.abs(np.array([tau1,tau2]) - 1.0)).argmin()
@@ -165,6 +165,10 @@ class FilterSearch(experiment.Experiment):
                             active_channel.events[event_name] = event_info
                         if event_name not in event_catalogue_perfile:
                             event_catalogue_perfile[event_name] = event_info
+
+            # Empty channel data from memory
+            _datafile.clear_channels()
+            
             # Coincident modes on one file
             if do_coincident_analysis:
                 sys.stdout.write(ascii_progress_bar(processed_files, total_files, prefix="Processing files", warning="Analyzing coincident events"))
@@ -200,6 +204,7 @@ class FilterSearch(experiment.Experiment):
                                     candidate_events.append([event0,event1])                  
                 sys.stdout.write(ascii_progress_bar(processed_files, total_files, prefix="Processing files", warning=f"Found {len(candidate_events)} coincident events"))
                 sys.stdout.flush()
+        
         # Clear the progress line and print final summary
         print()  # New line after progress bar
         print(f"Analysis complete: {len(event_catalogue)} total events detected")
