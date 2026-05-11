@@ -19,8 +19,8 @@ from datetime import timedelta
 #load data file
 folder =  r'F:/MAGE/'
 exp_name = "data_mK"
-run_name = "run3"
-identifier = 'run3_cont-'
+run_name = "run2"
+identifier = 'run2-'
 
 files = listdir(folder + '/' + exp_name + '/' + run_name)
 Nfiles = len(files)
@@ -94,7 +94,7 @@ def optimal_filter(data, template, Fs, NFFT):
     return SNR, dat_filt
 
 # create numpy array with all data
-for file in range(1, Nfiles): #Current version of MAGE.vi gives false data in first file
+for file in range(2, Nfiles): #Current version of MAGE.vi gives false data in first file
     if file>701: #avoid files
         continue
     f = h5py.File(folder + '/' + exp_name + '/' + run_name + '/' + identifier + str(file) + '.hdf5', 'r')
@@ -181,6 +181,7 @@ for file in range(1, Nfiles): #Current version of MAGE.vi gives false data in fi
             error_array[AI, channel, :] = [error1, error2]
             if (Gamma1 > Gamma_max and Gamma2 > Gamma_max) or (error1 > error_max and error2 > error_max): #Ignore bad fits
                 print("Input AI " + str(AI) + ", Channel " + str(channel+1) + ":WARNING: Bad mode detected, channel will be ignored")
+                continue
             if show_plot:        
                 plt.ion()
                 fig = plt.figure("IMPA DOWNLOAD")
