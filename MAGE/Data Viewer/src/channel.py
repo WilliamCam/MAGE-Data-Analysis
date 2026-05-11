@@ -45,8 +45,20 @@ class Channel():
         self.data = func(self.data, **kwargs)
 
     def clear_data(self):
-        """Remove the channel's loaded datasets from memory."""
-        self.data.clear
+        """Remove the channel's loaded datasets and cached fit results from memory.
+
+        Preserve event metadata so detected or defined events remain available.
+        """
+        if isinstance(self.data, dict):
+            self.data.clear()
+        else:
+            self.data = {}
+
+        if isinstance(self.fit_result, dict):
+            self.fit_result.clear()
+        else:
+            self.fit_result = {}
+
         gc.collect()
 
     def consolidate_iq_pair(self, iq_channel):

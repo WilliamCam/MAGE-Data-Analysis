@@ -9,6 +9,18 @@ class DataFile():
         self.detectors = {}
         self.metadata = {}
 
+    def clear_channels(self):
+        """Clear all channels in this datafile from memory.
+
+        This method invokes each channel's clear_data() method to release any
+        loaded datasets, then removes channel objects from the detector map.
+        """
+        for detector in self.detectors.values():
+            for channel in detector.channels.values():
+                channel.clear_data()
+            detector.channels.clear()
+        self.detectors.clear()
+
 class DataIO:
     def __init__(self, parent, IQ_labels = ['-I', '-Q'], file_format = 'hdf5'):
         #parent must be of same class as file_heirarchy master
