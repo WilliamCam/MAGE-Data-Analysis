@@ -1,5 +1,6 @@
 # Where you define rules for reading raw data files
 import h5py
+import gc
 
 class DataFile():
     """A DataFile contains the raw data."""

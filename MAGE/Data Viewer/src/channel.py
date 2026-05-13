@@ -53,12 +53,10 @@ class Channel():
             self.data.clear()
         else:
             self.data = {}
-
         if isinstance(self.fit_result, dict):
             self.fit_result.clear()
         else:
             self.fit_result = {}
-
         gc.collect()
 
     def consolidate_iq_pair(self, iq_channel):

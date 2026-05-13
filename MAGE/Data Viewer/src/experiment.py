@@ -34,7 +34,7 @@ class Experiment:
         self.scaling_gain = kwargs.pop('scaling_gain',3.14e-5)
         if read_metadata_on_init:
             print(self.exp_directory)
-            self.metadata = self.read_metadata()
+            self.read_metadata()
             self._populate_structures()
             self.show_tree()
                 
@@ -89,7 +89,7 @@ class Experiment:
                 _temp_metadata[_run_dir]["Attributes"] = {}
                 for _data_key in detector_names:
                     _temp_metadata[_run_dir]["Attributes"][_data_key] = _attributes.get(_data_key, {})
-                    
+        self.metadata = _temp_metadata            
         return _temp_metadata
 
     def update_metadata(self):
