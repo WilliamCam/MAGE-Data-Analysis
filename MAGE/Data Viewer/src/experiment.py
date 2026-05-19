@@ -139,9 +139,8 @@ class Experiment:
         for _run in _meta_data.keys():
             _active_run = Run(self, _run, filepath=os.path.join(self.exp_directory, _run))
             self.add_run(_active_run)
-            _meta_data = _meta_data[_run]
-            for _file_name in _meta_data['Files'].keys():
-                _file_meta = _meta_data['Files'][_file_name]
+            for _file_name in _meta_data[_run]['Files'].keys():
+                _file_meta = _meta_data[_run]['Files'][_file_name]
                 _absolute_path = os.path.join(self.exp_directory, _run, _file_name)
                 _active_file = DataFile(_active_run, _absolute_path)
                 _active_run.add_file(_active_file)

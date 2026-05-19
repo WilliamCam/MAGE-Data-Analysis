@@ -57,7 +57,7 @@ class FilterSearch(experiment.Experiment):
         super().__init__(name, master_filepath, config_yaml, read_metadata_on_init, **kwargs)
         self.event_catalogue = {}
 
-    def search_all_files(self, run:experiment.Run, avoid_files=[], show_plot=False, simulate_with_noise=False, do_coincident_analysis=False, output_pkl_dir=None, **kwargs):
+    def search_all_files(self, run:experiment.Run, avoid_files=[], show_plot=False, simulate_with_noise=False, do_coincident_analysis=False, output_pkl_dir=None, resume=False, **kwargs):
         _file_names = natsorted(listdir(run.filepath))
         _identifier = kwargs.pop('identifier', None)
         Gamma_bounds = kwargs.pop('Gamma_bounds', [1.0, 20.0])
@@ -85,11 +85,43 @@ class FilterSearch(experiment.Experiment):
         if _identifier is None:
             _identifier = run.name + '_'
         
+        start_file_index = 0
         total_files = len([f for i, f in enumerate(_file_names) if i not in avoid_files])
         processed_files = 0
         Nevents = 0
         
+        # Handle resume logic
+        if resume:
+            pkl_files = natsorted([f for f in os.listdir(output_pkl_dir) if f.startswith(_identifier) and 'file_' in f and f.endswith('.pkl')])
+            if pkl_files:
+                last_pkl = pkl_files[-1]
+                try:
+                    file_idx_str = last_pkl.split('file_')[1].split('_events')[0]
+                    start_file_index = int(file_idx_str) + 1
+                    print(f"Resuming from file index {start_file_index} (last completed: {last_pkl})")
+                    event_catalogue = self.load_event_catalogue_from_pickles(output_pkl_dir, _identifier)
+                    Nevents = len(event_catalogue)
+                except Exception as e:
+                    print(f"Warning: Could not parse last file index: {e}")
+                    print("Starting fresh analysis")
+                    start_file_index = 0
+                    event_catalogue = {}
+                    Nevents = 0
+            else:
+                print("No existing pickle files found. Starting fresh.")
+                event_catalogue = {}
+                Nevents = 0
+        else:
+            print("Starting fresh analysis (overwriting existing pickle files)")
+            event_catalogue = {}
+            Nevents = 0
+        
+        total_files = len([f for i, f in enumerate(_file_names) if i not in avoid_files and i >= start_file_index])
+        
         for _file_index, _file_name in enumerate(_file_names):
+            if _file_index < start_file_index:
+                continue
+            
             event_catalogue_perfile = {}
             event_catalogue_perfile.clear()
             if _file_index in avoid_files:
@@ -235,7 +267,9 @@ class FilterSearch(experiment.Experiment):
         self.event_catalogue = event_catalogue
         return event_catalogue, candidate_events
     
-    def inspect_event(self, event_name, span=1000, _NFFT=2**13, Qi=None, all_channels=False, channels_to_plot=None):
+    def inspect_event(self, run, event_name, span=1000, _NFFT=2**13, 
+                      Qi=None, all_channels=False, channels_to_plot=None, diagnostic_plots=False
+                      ):
         
         if event_name not in self.event_catalogue:
             raise ValueError(f"Event '{event_name}' not found in catalogue")
@@ -247,16 +281,8 @@ class FilterSearch(experiment.Experiment):
         event_index = event_info['index']
         
         # Find the run and file
-        run = None
-        datafile = None
-        for r in self.runs:
-            if file_index < len(r.files):
-                run = r
-                datafile = r.files[file_index]
-                break
-        if not run or not datafile:
-            raise ValueError(f"Could not locate file index {file_index}")
-        
+        datafile = run.files[file_index]
+
         _run_name = run.name
         # if str(file_index) not in str(datafile.filepath):
         #     raise ValueError(f"File index {file_index} does not match file path {datafile.filepath}")
@@ -618,7 +644,7 @@ class FilterSearch(experiment.Experiment):
         largest_event_name = max(events_to_search.items(), key=lambda x: x[1].get('SNR', 0))[0]
         
         # Inspect the event
-        self.inspect_event(largest_event_name, all_channels=all_channels, channels_to_plot=channels_to_plot)
+        self.inspect_event(run, largest_event_name, all_channels=all_channels, channels_to_plot=channels_to_plot)
         
         return largest_event_name
 
@@ -705,3 +731,75 @@ class FilterSearch(experiment.Experiment):
         except Exception as e:
             print(f"Error: Failed to save event catalogue to {pkl_path}: {e}")
             return None
+
+    def remove_events_from_file(self, file_identifier, run: 'experiment.Run' = None):
+        if not self.event_catalogue:
+            print("Event catalogue is empty")
+            return 0
+        
+        # Determine file index from identifier
+        file_index = None
+        filename = None
+        
+        if isinstance(file_identifier, int):
+            # Direct file index provided
+            file_index = file_identifier
+            # Try to get filename if run provided
+            if run and file_index < len(run.files):
+                filename = os.path.basename(run.files[file_index].filepath)
+        elif isinstance(file_identifier, str):
+            # Filename provided - search for matching file index
+            filename = os.path.basename(file_identifier)
+            if run:
+                for idx, datafile in enumerate(run.files):
+                    if os.path.basename(datafile.filepath) == filename:
+                        file_index = idx
+                        break
+            else:
+                # Search all runs
+                for r in self.runs:
+                    for idx, datafile in enumerate(r.files):
+                        if os.path.basename(datafile.filepath) == filename:
+                            file_index = idx
+                            break
+                    if file_index is not None:
+                        break
+        
+        if file_index is None:
+            print(f"Could not locate file: {file_identifier}")
+            return 0
+        
+        # Find and remove events from this file
+        events_to_remove = [name for name, info in self.event_catalogue.items()
+                           if info.get('file N') == file_index]
+        
+        num_removed = len(events_to_remove)
+        for event_name in events_to_remove:
+            del self.event_catalogue[event_name]
+        
+        if filename:
+            print(f"Removed {num_removed} events from file {file_index}: {filename}")
+        else:
+            print(f"Removed {num_removed} events from file index {file_index}")
+        
+        return num_removed
+    
+    def remove_events_from_files(self, start_file_index: int, end_file_index: int):
+        if not self.event_catalogue:
+            print("Event catalogue is empty")
+            return 0
+        
+        if start_file_index > end_file_index:
+            print("Error: start_file_index must be <= end_file_index")
+            return 0
+        
+        events_to_remove = [name for name, info in self.event_catalogue.items()
+                           if start_file_index <= info.get('file N') <= end_file_index]
+        
+        num_removed = len(events_to_remove)
+        for event_name in events_to_remove:
+            del self.event_catalogue[event_name]
+        
+        print(f"Removed {num_removed} events from files {start_file_index} to {end_file_index}")
+        
+        return num_removed
