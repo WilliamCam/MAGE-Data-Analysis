@@ -1,7 +1,6 @@
 import h5py
 import numpy as np
 import os
-import os
 from SQUID import SQUID
 from crystal import Crystal
 from fileIO_rules import DataIO, DataFile
