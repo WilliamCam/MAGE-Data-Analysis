@@ -1,3 +1,7 @@
+# MAGE Data Analysis
+This is a public repo designed to organise data analysis scripts and procedures for the Multimode Acoustic Gravitaional Wave Experiemt (MAGE).
+
+
 # MAGE Data Analysis Package Tutorial
 
 This guide documents the package in the src directory and is intended to act as a practical tutorial for loading experiment data, inspecting channels, fitting resonances, and searching for events.
