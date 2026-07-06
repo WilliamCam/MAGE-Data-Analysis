@@ -49,8 +49,8 @@ def optimal_filter(data, template, Fs, NFFT):
     sigmasq = 2 * (K**2 * fft_template * fft_template.conjugate() / power_spec).sum() * df
     sigma = np.sqrt(np.abs(sigmasq))
     SNR = np.abs(2 * dat_filt) / (sigma)
-    del fft, zero_pad, template_pad, fft_template, power_dat, freq_PSD, freq_dat, power_spec, OF, K, df, opt_filter, sigmasq, sigma
-    return SNR, dat_filt
+    del fft, zero_pad, template_pad, fft_template, freq_PSD, freq_dat, OF, K, df, opt_filter, sigmasq, sigma
+    return SNR, dat_filt, power_spec
 
 class FilterSearch(experiment.Experiment):
     def __init__(self, name, master_filepath, config_yaml, read_metadata_on_init=True, **kwargs):
@@ -99,7 +99,7 @@ class FilterSearch(experiment.Experiment):
                     file_idx_str = last_pkl.split('file_')[1].split('_events')[0]
                     start_file_index = int(file_idx_str) + 1
                     print(f"Resuming from file index {start_file_index} (last completed: {last_pkl})")
-                    event_catalogue = self.load_event_catalogue_from_pickles(output_pkl_dir, _identifier)
+                    event_catalogue, _ = self.load_event_catalogue_from_pickles(output_pkl_dir, _identifier)
                     Nevents = len(event_catalogue)
                 except Exception as e:
                     print(f"Warning: Could not parse last file index: {e}")
@@ -176,7 +176,7 @@ class FilterSearch(experiment.Experiment):
                     Nfilter = int(Fs * 5 * tau)
                     t_sig = 1 / Fs * np.linspace(0, Nfilter, Nfilter)
                     template = np.exp(-t_sig / tau)
-                    SNR, dat_filt = optimal_filter(strain, template, Fs, _NFFT)
+                    SNR, dat_filt, _ = optimal_filter(strain, template, Fs, _NFFT)
                     
                     _SNR_detection_threshold = _SNR_threshold
                     peaks = find_peaks(SNR, height=_SNR_detection_threshold, distance=int(3*tau*Fs), width=[100, 5e6], rel_height=1.0)
@@ -184,8 +184,8 @@ class FilterSearch(experiment.Experiment):
                     if len(peaks[0]) > 0:
                         diverge_template1 = np.exp(-t_sig / (tau / 10.0))
                         diverge_template2 = np.exp(-t_sig / (tau * 10.0))
-                        transient_SNR1, _ = optimal_filter(strain, diverge_template1, Fs, _NFFT)
-                        transient_SNR2, _ = optimal_filter(strain, diverge_template2, Fs, _NFFT)
+                        transient_SNR1, _, _ = optimal_filter(strain, diverge_template1, Fs, _NFFT)
+                        transient_SNR2, _, _ = optimal_filter(strain, diverge_template2, Fs, _NFFT)
 
                         for event_i in peaks[0]:
                             if ((SNR**2)[event_i] < (transient_SNR1**2)[event_i] or (SNR**2)[event_i] < (transient_SNR2**2)[event_i]):
@@ -254,10 +254,20 @@ class FilterSearch(experiment.Experiment):
         
         if event_catalogue:
             pkl_filename = f"{_identifier}event_catalogue.pkl"
-            pkl_path = os.path.join(output_pkl_dir, pkl_filename)
+            pkl_path = os.path.join(output_pkl_dir,"..", pkl_filename)
             try:
                 with open(pkl_path, 'wb') as f:
                     pickle.dump(event_catalogue, f)
+                print(f"\nFull catalogue saved to: {pkl_path}")
+            except Exception as e:
+                print(f"\nWarning: Failed to save full catalogue: {e}")
+
+        if do_coincident_analysis:
+            pkl_filename = f"{_identifier}event_catalogue-coincident_analysis.pkl"
+            pkl_path = os.path.join(output_pkl_dir,"..", pkl_filename)
+            try:
+                with open(pkl_path, 'wb') as f:
+                    pickle.dump(candidate_events, f)
                 print(f"\nFull catalogue saved to: {pkl_path}")
             except Exception as e:
                 print(f"\nWarning: Failed to save full catalogue: {e}")
@@ -347,8 +357,10 @@ class FilterSearch(experiment.Experiment):
                 Nfilter = int(Fs * 5 * tau)
                 t_sig = 1 / Fs * np.linspace(0, Nfilter, Nfilter)
                 template = np.exp(-t_sig / tau)
-                SNR, dat_filt = optimal_filter(strain, template, Fs, _NFFT)
+                SNR, dat_filt, psd = optimal_filter(strain, template, Fs, _NFFT)
                 # Extract data around event
+                plt.plot(psd)
+                plt.yscale('log')
                 start_idx = max(0, event_index - span // 2)
                 end_idx = min(len(SNR), event_index + span // 2)
                 
@@ -614,16 +626,94 @@ class FilterSearch(experiment.Experiment):
         print(f"\nTotal events above SNR {threshold}: {event_count}")
         return sorted(set(event_names))
 
-    def get_largest(self, run: 'experiment.Run' = None, all_channels=False, channels_to_plot=None):
+    def get_largest(self, run: 'experiment.Run' = None, all_channels=False, channels_to_plot=None, 
+                     coincident_events: list = None, span: int = 1000, _NFFT: int = 2**13):
         """
-        Find the event with the highest SNR and inspect it.
-        If run is provided, search only that run; otherwise search all events.
+        Find and inspect the largest event. Two modes:
+        
+        1. Single Event Mode (coincident_events=None):
+           Find the event with the highest SNR and inspect it.
+           
+        2. Coincident Event Pair Mode (coincident_events provided):
+           Find and inspect the largest coincident event pair.
+           Selection criterion:
+           - If both events have SNR > 3: select pair with largest max SNR
+           - Otherwise: select pair with largest combined SNR (SNR0 + SNR1)
         
         Parameters:
         - run: optional Run to limit search
         - all_channels: if True, plot all channels at event time
         - channels_to_plot: list of (detector_name, channel_name) tuples to plot
+        - coincident_events: optional list of coincident event pairs. If provided, finds largest pair instead of single event
+        - span: time span around event to plot (default: 1000) - used in coincident mode
+        - _NFFT: FFT size for analysis (default: 2**13) - used in coincident mode
+        
+        Returns:
+        - Single event mode: event_name (string)
+        - Coincident mode: (event0_name, event1_name, (snr0, snr1)) tuple
         """
+        # COINCIDENT EVENT PAIR MODE
+        if coincident_events is not None:
+            if not coincident_events:
+                print("Error: No coincident events provided")
+                return None
+            
+            # Find the largest coincident event pair with SNR criteria
+            largest_metric = -1
+            largest_pair_idx = 0
+            largest_event_names = None
+            selection_criterion = None  # Track which criterion was used
+            
+            for idx, pair in enumerate(coincident_events):
+                event0, event1 = pair
+                event0_name, event0_info = event0
+                event1_name, event1_info = event1
+                
+                snr0 = event0_info['SNR']
+                snr1 = event1_info['SNR']
+                
+                # If both SNRs > 3, use max SNR as criterion
+                if snr0 > 3 and snr1 > 3:
+                    pair_metric = max(snr0, snr1)
+                    criterion = "max SNR (both > 3)"
+                else:
+                    # Otherwise use combined SNR
+                    pair_metric = snr0 + snr1
+                    criterion = "combined SNR"
+                
+                if pair_metric > largest_metric:
+                    largest_metric = pair_metric
+                    largest_pair_idx = idx
+                    largest_event_names = (event0_name, event1_name)
+                    selection_criterion = criterion
+            
+            if not largest_event_names:
+                print("Error: Could not find largest coincident event")
+                return None
+            
+            event0_name, event1_name = largest_event_names
+            event0_info = self.event_catalogue[event0_name]
+            event1_info = self.event_catalogue[event1_name]
+            
+            print(f"\n{'='*80}")
+            print(f"Largest Coincident Event Pair ({selection_criterion}: {largest_metric:.2f})")
+            print(f"{'='*80}")
+            print(f"Event 0: {event0_name}")
+            print(f"  Detector: {event0_info['detector']}, Channel: {event0_info['channel']}, SNR: {event0_info['SNR']:.2f}")
+            print(f"Event 1: {event1_name}")
+            print(f"  Detector: {event1_info['detector']}, Channel: {event1_info['channel']}, SNR: {event1_info['SNR']:.2f}")
+            print(f"{'='*80}\n")
+            
+            # Inspect both events
+            print("Plotting Event 0:")
+            self.inspect_event(run, event0_name, span=span, _NFFT=_NFFT, all_channels=all_channels)
+            
+            print("\nPlotting Event 1:")
+            self.inspect_event(run, event1_name, span=span, _NFFT=_NFFT, all_channels=all_channels)
+            
+            return event0_name, event1_name, (event0_info['SNR'], event1_info['SNR'])
+        
+        # SINGLE EVENT MODE
         if not self.event_catalogue:
             print("Event catalogue is empty")
             return None
@@ -648,27 +738,33 @@ class FilterSearch(experiment.Experiment):
         
         return largest_event_name
 
-    def load_event_catalogue_from_pickles(self, pkl_dir: str, identifier: str = None):
+    def load_event_catalogue(self, pkl_dir: str, identifier: str = None):
         """
-        Load event catalogue from pickle files saved by search_all_files.
+        Load event catalogue and coincident events from pickle files saved by search_all_files.
         Reads both per-file pickles and the full catalogue pickle.
+        Also loads coincident analysis results if available.
         
         Parameters:
         - pkl_dir: directory containing pickle files
         - identifier: optional identifier prefix to filter files (e.g., "run1_")
                      if None, loads all .pkl files in directory
         
-        Returns the merged event_catalogue dict.
+        Returns:
+        - Tuple of (event_catalogue dict, coincident_events list or None)
+          where coincident_events is the list of event pairs from coincident analysis,
+          or None if no coincident analysis file is found.
         """
         if not os.path.exists(pkl_dir):
             raise ValueError(f"Pickle directory does not exist: {pkl_dir}")
         
         self.event_catalogue = {}
+        co_events = None
+        
         pkl_files = sorted([f for f in os.listdir(pkl_dir) if f.endswith('.pkl')])
         
         if not pkl_files:
             print(f"No pickle files found in {pkl_dir}")
-            return self.event_catalogue
+            return self.event_catalogue, co_events
         
         # Filter by identifier if provided
         if identifier:
@@ -676,7 +772,7 @@ class FilterSearch(experiment.Experiment):
         
         if not pkl_files:
             print(f"No pickle files with identifier '{identifier}' found in {pkl_dir}")
-            return self.event_catalogue
+            return self.event_catalogue, co_events
         
         # Try to load full catalogue first
         full_catalogue_files = [f for f in pkl_files if 'event_catalogue.pkl' in f]
@@ -686,24 +782,43 @@ class FilterSearch(experiment.Experiment):
                 with open(full_pkl_path, 'rb') as f:
                     self.event_catalogue = pickle.load(f)
                 print(f"Loaded full catalogue from {full_catalogue_files[0]}: {len(self.event_catalogue)} events")
-                return self.event_catalogue
             except Exception as e:
                 print(f"Warning: Failed to load full catalogue: {e}")
                 print("Attempting to load from per-file pickles...")
         
-        # Load per-file pickles and merge
-        per_file_pkl = [f for f in pkl_files if 'file_' in f and 'events.pkl' in f]
-        for pkl_file in natsorted(per_file_pkl):
-            pkl_path = os.path.join(pkl_dir, pkl_file)
-            try:
-                with open(pkl_path, 'rb') as f:
-                    file_events = pickle.load(f)
-                    self.event_catalogue.update(file_events)
-            except Exception as e:
-                print(f"Warning: Failed to load {pkl_file}: {e}")
+        # Load per-file pickles and merge (if full catalogue not loaded)
+        if not self.event_catalogue:
+            per_file_pkl = [f for f in pkl_files if 'file_' in f and 'events.pkl' in f]
+            for pkl_file in natsorted(per_file_pkl):
+                pkl_path = os.path.join(pkl_dir, pkl_file)
+                try:
+                    with open(pkl_path, 'rb') as f:
+                        file_events = pickle.load(f)
+                        self.event_catalogue.update(file_events)
+                except Exception as e:
+                    print(f"Warning: Failed to load {pkl_file}: {e}")
         
-        print(f"\nTotal events loaded: {len(self.event_catalogue)}")
-        return self.event_catalogue
+        print(f"Total events loaded: {len(self.event_catalogue)}")
+        
+        # Try to load coincident analysis results from parent directory
+        parent_dir = os.path.dirname(pkl_dir)
+        if os.path.exists(parent_dir):
+            parent_files = [f for f in os.listdir(parent_dir) if f.endswith('.pkl')]
+            if identifier:
+                co_analysis_files = [f for f in parent_files if identifier in f and 'coincident_analysis' in f]
+            else:
+                co_analysis_files = [f for f in parent_files if 'coincident_analysis' in f]
+            
+            if co_analysis_files:
+                co_pkl_path = os.path.join(parent_dir, co_analysis_files[0])
+                try:
+                    with open(co_pkl_path, 'rb') as f:
+                        co_events = pickle.load(f)
+                    print(f"Loaded coincident analysis from {co_analysis_files[0]}: {len(co_events)} event pairs")
+                except Exception as e:
+                    print(f"Warning: Failed to load coincident analysis: {e}")
+        
+        return self.event_catalogue, co_events
 
     def save_event_catalogue(self, output_pkl_dir: str = None, identifier: str = None):
         if not self.event_catalogue:
@@ -731,6 +846,136 @@ class FilterSearch(experiment.Experiment):
         except Exception as e:
             print(f"Error: Failed to save event catalogue to {pkl_path}: {e}")
             return None
+
+    def coincident_analysis(self, run: 'experiment.Run', event_catalogue: dict = None, output_pkl_dir: str = None, identifier: str = None):
+        """
+        Perform coincident analysis on an event catalogue without running the full search again.
+        This extracts the coincident analysis block from search_all_files and applies it to a loaded event catalogue.
+        
+        Args:
+            run: The experiment Run object
+            event_catalogue: Optional pre-loaded event catalogue dict. If None, loads from pickle files in output_pkl_dir
+            output_pkl_dir: Directory containing the per-file pickle files (used if event_catalogue is None). If None, uses exp._output_path
+            identifier: Identifier prefix used when creating pickle files (default: run.name + '_')
+        
+        Returns:
+            Tuple of (candidate_events list, output_pkl_path) or (None, None) on failure
+        """
+        if not run.parent:
+            raise ValueError("Run has no parent Experiment")
+        
+        exp = run.parent
+        if output_pkl_dir is None:
+            output_pkl_dir = exp._output_path
+        if identifier is None:
+            identifier = run.name + '_'
+        
+        # Load the event catalogue if not provided
+        if event_catalogue is None:
+            print("Loading event catalogue from pickle files...")
+            event_catalogue, _ = self.load_event_catalogue_from_pickles(output_pkl_dir, identifier)
+        else:
+            print("Using provided event catalogue")
+        
+        if not event_catalogue:
+            print("Error: Event catalogue is empty")
+            return None, None
+        
+        print(f"Using {len(event_catalogue)} events from catalogue")
+        
+        # Get Fs from metadata (use first detector available)
+        try:
+            metadata = exp.metadata[run.name]
+            detector_names = list(run.detectors_in_run())
+            if not detector_names:
+                raise ValueError("No detectors found in run")
+            Fs = metadata['Attributes'][detector_names[0]]['Fs']
+            print(f"Using sampling frequency Fs = {Fs} Hz")
+        except Exception as e:
+            print(f"Error: Failed to get sampling frequency from metadata: {e}")
+            return None, None
+        
+        # Initialize candidate events list
+        candidate_events = []
+        
+        # Perform coincident analysis (extracted from search_all_files)
+        print("Analyzing coincident events...")
+        sys.stdout.flush()
+        
+        for _channel, _channel_name in enumerate(run.channels_in_run()):
+            channel_trigger_times = {}
+            
+            # Build mapping of detector names to trigger times for this channel
+            for _AI, _detector_name in enumerate(run.detectors_in_run()):
+                channel_trigger_times[_detector_name] = [
+                    event_catalogue[event]['time'].timestamp() 
+                    for event in event_catalogue 
+                    if (event_catalogue[event]['detector'] == _detector_name) and 
+                       (event_catalogue[event]['channel'] == _channel_name)
+                ]
+            
+            # Get all detector pairs
+            detector_pairs = list(combinations(run.detectors_in_run(), 2))
+            
+            for pair in detector_pairs:
+                coincident_t = []
+                times0 = channel_trigger_times[pair[0]]
+                times1 = channel_trigger_times[pair[1]]
+                
+                # Find coincident times between detector pair (within 3/Fs seconds)
+                for time0 in times0:
+                    for time1 in times1:
+                        if np.abs(time0 - time1) < 3 * 1 / Fs:
+                            coincident_t.append((time0, time1))
+                            break  # Move to next time0 after finding a coincident time1
+                
+                # Extract candidate event pairs from coincident times
+                for ii in range(len(coincident_t)):
+                    co_event_nn = ii
+                    per_channel_events = [
+                        event for event in event_catalogue 
+                        if event_catalogue[event]['channel'] == _channel_name
+                    ]
+                    
+                    # Find events from pair[0] at coincident_t[ii][0]
+                    co_event0 = [
+                        (event, event_catalogue[event]) 
+                        for event in per_channel_events 
+                        if (event_catalogue[event]['time'] == datetime.fromtimestamp(coincident_t[co_event_nn][0])) and
+                           event_catalogue[event]['detector'] == pair[0]
+                    ]
+                    
+                    # Find events from pair[1] at coincident_t[ii][1]
+                    co_event1 = [
+                        (event, event_catalogue[event]) 
+                        for event in per_channel_events 
+                        if (event_catalogue[event]['time'] == datetime.fromtimestamp(coincident_t[co_event_nn][1])) and
+                           event_catalogue[event]['detector'] == pair[1]
+                    ]
+                    
+                    # Add all combinations of co_event0 and co_event1 to candidate_events
+                    for event0 in co_event0:
+                        for event1 in co_event1:
+                            candidate_events.append([event0, event1])
+        
+        print(f"Found {len(candidate_events)} coincident event pairs")
+        
+        # Save coincident analysis results
+        parent_output_dir = os.path.dirname(output_pkl_dir)
+        pkl_filename = f"{identifier}event_catalogue-coincident_analysis.pkl"
+        pkl_path = os.path.join(parent_output_dir, pkl_filename)
+        
+        try:
+            if not os.path.exists(parent_output_dir):
+                os.makedirs(parent_output_dir)
+            
+            with open(pkl_path, 'wb') as f:
+                pickle.dump(candidate_events, f)
+            print(f"Coincident analysis results saved to: {pkl_path}")
+            return candidate_events, pkl_path
+        except Exception as e:
+            print(f"Error: Failed to save coincident analysis to {pkl_path}: {e}")
+            return None, None
 
     def remove_events_from_file(self, file_identifier, run: 'experiment.Run' = None):
         if not self.event_catalogue:
@@ -803,3 +1048,62 @@ class FilterSearch(experiment.Experiment):
         print(f"Removed {num_removed} events from files {start_file_index} to {end_file_index}")
         
         return num_removed
+
+    def histograms(self, event_catalogue: dict, coincident_events: list = None, bins: int = 50, figsize: tuple = (10, 6), title: str = "SNR Distribution", save_path: str = None):
+        """
+        Plot a histogram of SNR values from the event catalogue with optional overlay of coincident events.
+        
+        Args:
+            event_catalogue: Dictionary of events where each value contains an 'SNR' key
+            coincident_events: Optional list of coincident event pairs. Each pair is [event0, event1] 
+                              where event0/event1 are (event_name, event_info_dict) tuples
+            bins: Number of bins for histogram (default: 50)
+            figsize: Figure size as (width, height) tuple (default: (10, 6))
+            title: Title for the plot (default: "SNR Distribution")
+            save_path: Optional path to save the figure. If None, figure is not saved
+        
+        Returns:
+            (fig, ax) matplotlib figure and axes objects
+        """
+        # Extract SNR from all events
+        all_snr = [event_info['SNR'] for event_info in event_catalogue.values()]
+        
+        # Extract SNR from coincident events if provided
+        coincident_snr = []
+        if coincident_events:
+            for pair in coincident_events:
+                event0, event1 = pair
+                # event0 and event1 are (event_name, event_info_dict) tuples
+                _, event0_info = event0
+                _, event1_info = event1
+                coincident_snr.append(event0_info['SNR'])
+                coincident_snr.append(event1_info['SNR'])
+        
+        # Create figure and plot
+        fig, ax = plt.subplots(figsize=figsize)
+        
+        # Plot histogram of all events
+        ax.hist(np.array(all_snr)**2, bins=bins, alpha=0.6, label=f'All Events (n={len(all_snr)})', 
+                color='blue', edgecolor='black', cumulative=-1)
+        
+        # Overlay histogram of coincident events if provided
+        if coincident_snr:
+            ax.hist(np.array(coincident_snr)**2, bins=bins, alpha=0.6, label=f'Coincident Events (n={len(coincident_snr)})', 
+                    color='red', edgecolor='black', cumulative=-1)
+        
+        # Labels and legend
+        ax.set_xlabel('SNR^2', fontsize=12)
+        ax.set_ylabel('Count', fontsize=12)
+        ax.set_title(title, fontsize=14, fontweight='bold')
+        ax.legend(fontsize=11)
+        ax.grid(True, alpha=0.3)
+        ax.set_yscale('log')
+        
+        # Save figure if path provided
+        if save_path:
+            fig.savefig(save_path, dpi=300, bbox_inches='tight')
+            print(f"Figure saved to: {save_path}")
+        
+        plt.tight_layout()
+        return fig, ax
+
